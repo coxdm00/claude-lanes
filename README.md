@@ -18,18 +18,6 @@ claude plugin install lane-fence@claude-lanes --scope project
 claude plugin install lane-blame@claude-lanes --scope project
 ```
 
-The marketplace also lists two of Anthropic's playground mods as `git-subdir` entries, since their
-own marketplace sits in a subdirectory the `marketplace add` command cannot reach: `blast-radius`,
-which holds a destructive command and shows what it would change, and `token-weather`, a context
-forecast above the prompt. They install the same way, `blast-radius@claude-lanes` and
-`token-weather@claude-lanes`, and their code stays Anthropic's.
-
-Two more entries point at strangers' mods that passed a source read on 2026-10-15, each pinned to
-the exact commit read, so an install gets the vetted code and nothing newer until the pin moves:
-`token-usage`, a token profiler that attributes usage to the command, skill, or subagent that
-spent it, and `agent-radar`, one line above the prompt per running subagent. The read is in
-`docs/vetting-2026-10-15.md`.
-
 Checked on Claude Code 2.1.300, where the function-hooks surface is current; a later build may
 move it, and CI pins that version so a change is a commit, never a surprise.
 

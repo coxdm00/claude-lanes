@@ -13,3 +13,7 @@ node_modules/
 # the vale binary tools/get-vale.sh fetches, never committed
 tools/bin/
 tools/.vale/
+
+# cold reviews, and anything review-shaped at the root, never enter the public history
+.claude/reviews/
+/REVIEW-*.md

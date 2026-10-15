@@ -21,50 +21,6 @@
       "name": "lane-blame",
       "source": "./lane-blame",
       "description": "Who wrote the red: the test verdict attributed to the agent that wrote the file"
-    },
-    {
-      "name": "blast-radius",
-      "source": {
-        "source": "git-subdir",
-        "url": "https://github.com/anthropics/claude-code-playground.git",
-        "path": "claude-code/mods/blast-radius",
-        "ref": "main",
-        "sha": "569c5283d9a0a7ee7938df85bb32e4f48cbb8c86"
-      },
-      "description": "Anthropic's playground mod: holds rm -rf, git reset --hard, git clean, a force push, and a migration, and shows what each would change, with Proceed and Cancel"
-    },
-    {
-      "name": "token-weather",
-      "source": {
-        "source": "git-subdir",
-        "url": "https://github.com/anthropics/claude-code-playground.git",
-        "path": "claude-code/mods/token-weather",
-        "ref": "main",
-        "sha": "569c5283d9a0a7ee7938df85bb32e4f48cbb8c86"
-      },
-      "description": "Anthropic's playground mod: a live forecast of the context window, drawn above the prompt"
-    },
-    {
-      "name": "token-usage",
-      "source": {
-        "source": "git-subdir",
-        "url": "https://github.com/Wicked-Sick-Ltd/token-usage.git",
-        "path": ".",
-        "ref": "main",
-        "sha": "394ba4dc12e72cdc656d88534a84427b6f76ae6d"
-      },
-      "description": "Wicked Sick's token profiler: attributes usage to the slash command, skill, or subagent that consumed it, priced by model; pinned to the commit vetted on 2026-10-15"
-    },
-    {
-      "name": "agent-radar",
-      "source": {
-        "source": "git-subdir",
-        "url": "https://github.com/hamzafer/claude-code-mods.git",
-        "path": "mods/agent-radar",
-        "ref": "main",
-        "sha": "b6dc61604ca70452d6f6a3cd4daacf95cd32d0fb"
-      },
-      "description": "hamzafer's agent radar: one line above the prompt per running subagent, nothing drawn when none runs; pinned to the commit vetted on 2026-10-15"
     }
   ]
 }
