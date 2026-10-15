@@ -93,6 +93,56 @@ export const configOf = (options: PluginOptions | undefined): FenceConfig => {
     deadlineMs: ms,
   };
 };
+// the manifest's declared type of each option; a list option is a comma string or a JSON array
+const KINDS: Record<keyof typeof DEFAULTS, "text" | "list" | "number"> = {
+  agentTypes: "list",
+  recordFolders: "list",
+  memoryRoot: "text",
+  worktreesDir: "text",
+  rootTmp: "text",
+  systemTmp: "text",
+  statDeadlineMs: "number",
+};
+const fits = (kind: "text" | "list" | "number", value: unknown) =>
+  kind === "number"
+    ? typeof value === "number"
+    : typeof value === "string" ||
+      (kind === "list" &&
+        Array.isArray(value) &&
+        value.every((item) => typeof item === "string"));
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+// this mod's own options in one settings source: the first pluginConfigs key, in file order,
+// whose name before the @ is lane-fence, so lane-fence@claude-lanes and a bare lane-fence both match
+const blockOf = (settings: unknown): Record<string, unknown> => {
+  const configs = isRecord(settings) ? settings.pluginConfigs : undefined;
+  if (!isRecord(configs)) return {};
+  const key = Object.keys(configs).find(
+    (k) => k.split("@")[0] === "lane-fence",
+  );
+  const entry = key === undefined ? undefined : configs[key];
+  const options = isRecord(entry) ? entry.options : undefined;
+  return isRecord(options) ? options : {};
+};
+
+// each later block overlays the options field by field; a field the manifest would not take
+// counts as unset, as the engine counts it, so the value beneath stands
+export const overlay = (
+  options: PluginOptions | undefined,
+  ...settings: unknown[]
+): PluginOptions => {
+  const merged: Record<string, PluginOptions[string]> = { ...options };
+  for (const source of settings) {
+    const own = blockOf(source);
+    for (const [name, kind] of Object.entries(KINDS)) {
+      const value = own[name];
+      if (fits(kind, value)) merged[name] = value as PluginOptions[string];
+    }
+  }
+  return merged;
+};
+
 // a redirect to a device writes no file, 2>/dev/null is every reviewer's habit
 const DEVICES = /^\/dev\/(null|stdout|stderr|tty|fd\/\d+)$/;
 
@@ -1229,8 +1279,17 @@ const scriptText = (
   `Write only under ${records(w)}. ${REPORT}`;
 
 export const register: Register = (on, options) => {
-  const config = configOf(options);
-  const ALLOW = config.allow;
+  // the project and local blocks are read once per load, at the first call that needs config,
+  // and the config built once from the merge. a source that cannot be read overrides nothing
+  let settled: Promise<FenceConfig> | undefined;
+  const configured = (
+    read: (source: "project" | "local") => Promise<unknown>,
+  ) =>
+    (settled ??= Promise.all(
+      (["project", "local"] as const).map((source) =>
+        (async () => read(source))().catch(() => ({})),
+      ),
+    ).then((sources) => configOf(overlay(options, ...sources))));
   // the Bash half alone: Write, Edit, and NotebookEdit are fenced by a tool permission or a
   // settings hook, which never judges a Bash call
   on("tool.call", { tool: "Bash" }, async ($, e, next) => {
@@ -1240,7 +1299,10 @@ export const register: Register = (on, options) => {
     // the type is the engine's own record of the spawn, AgentInfo.type, never a name in the
     // prompt; a workflow's or a fork's id is in no list and passes
     const agent = (await $.agent.list()).find((a) => a.id === e.agentId);
-    if (agent === undefined || !config.types.has(agent.type)) return next(e);
+    if (agent === undefined) return next(e);
+    const config = await configured((source) => $.settings.read({ source }));
+    const ALLOW = config.allow;
+    if (!config.types.has(agent.type)) return next(e);
     const cwd = await $.session.cwd();
     const who: Fenced = { type: agent.type, allow: ALLOW };
     const refuse = (what: string, deny: string) => {
