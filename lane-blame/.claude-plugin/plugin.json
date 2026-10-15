@@ -11,8 +11,14 @@
     "sourceRoot": {
       "type": "string",
       "title": "Source root",
-      "description": "The folder, relative to each tree's root, whose writes are recorded and whose tests run. Empty records writes anywhere in the tree.",
+      "description": "Space-separated folders, relative to each tree's root, whose writes are recorded and whose tests run, one or more. Empty records writes anywhere in the tree.",
       "default": "src"
+    },
+    "testFolder": {
+      "type": "string",
+      "title": "Tests folder",
+      "description": "A tests folder beside each source root, such as tests, for a repo that keeps tests apart from sources. Empty keeps the sibling rule. Set, a write under a source root runs every test file under the root's parent joined with this folder, a write under that folder is recorded too, and a red run names every writer recorded under that root.",
+      "default": ""
     },
     "testSuffixes": {
       "type": "string",
