@@ -84,6 +84,20 @@ point that option at wherever your reviewers keep their output.
 | `systemTmp` | `/tmp` | Absolute scratch folder. Empty turns it off. |
 | `statDeadlineMs` | `2000` | The longest one call waits on the file system before a stalled check is refused. |
 
+## Per-repo options
+
+Claude Code reads `pluginConfigs` from your user settings, `~/.claude/settings.json`, so the
+options above are machine-wide: every repo on one machine runs the same block. This mod also reads
+the project's own settings through the engine, `.claude/settings.json` and then
+`.claude/settings.local.json` at the session root, and takes its own block from each, the entry
+under `pluginConfigs` whose key is `lane-fence@claude-lanes` or any key whose name before the `@` is
+`lane-fence`. A field set there wins over the user value, the local file over the project file, field
+by field. A field of the wrong type is ignored, as the engine ignores one, and a list option takes a
+JSON array as well as its string form. The read happens once per session, at the mod's first event,
+so a change to either file takes effect at the next session. A missing block changes nothing, and a
+block the engine cannot read leaves the user options standing. The block under "What this harness
+sets" is this repo's project block, and it is the one that loads here.
+
 ## What this harness sets
 
 Claude Code reads `pluginConfigs` from user or managed settings alone, so this block lives in

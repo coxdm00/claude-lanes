@@ -60,8 +60,8 @@ mkdir -p .claude/state && echo quiet > .claude/state/pace
 
 ## Options
 
-Set in `/config` or in settings under `pluginConfigs.pace.options`. Relative paths read under the
-session root.
+Set in `/config`, which writes `pluginConfigs["lane-pace@claude-lanes"].options` in your user
+settings, or per repo as the next section says. Relative paths read under the session root.
 
 | Option | Type | Default | What it does |
 | --- | --- | --- | --- |
@@ -80,6 +80,20 @@ session root.
 With `briefScript` set and the other brief options on their defaults, a lane brief is any `.md` whose name holds `brief`, sitting straight under a
 `CC-<N>/` folder or its `briefs/` folder. A bare `features/` path reads beside `bundleDir`'s last
 folder, a bare `CC-<N>/` path under `bundleDir`, and a leading `~/` from `HOME`.
+
+## Per-repo options
+
+Claude Code reads `pluginConfigs` from your user settings, `~/.claude/settings.json`, so the
+options above are machine-wide: every repo on one machine runs the same block. This mod also reads
+the project's own settings through the engine, `.claude/settings.json` and then
+`.claude/settings.local.json` at the session root, and takes its own block from each, the entry
+under `pluginConfigs` whose key is `lane-pace@claude-lanes` or any key whose name before the `@` is
+`lane-pace`. A field set there wins over the user value, the local file over the project file, field
+by field. A field of the wrong type is ignored, as the engine ignores one, and a list option takes a
+JSON array as well as its string form. The read happens once per session, at the mod's first event,
+so a change to either file takes effect at the next session. A missing block changes nothing, and a
+block the engine cannot read leaves the user options standing. The block under "What this harness
+sets" is this repo's project block, and it is the one that loads here.
 
 ## What this harness sets
 

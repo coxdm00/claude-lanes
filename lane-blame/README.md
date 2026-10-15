@@ -65,19 +65,35 @@ same. Every option has a default, so a repo with vitest tests under `src/` needs
 
 ## Options
 
-Each option is a row under `/config`, stored in settings under `pluginConfigs.suite.options`.
+Each option is a row under `/config`, which writes `pluginConfigs["lane-blame@claude-lanes"].options`
+in your user settings, or per repo as the next section says.
 
 | option | default | what it sets |
 | :- | :- | :- |
-| `sourceRoot` | `src` | The folder inside each tree whose writes are recorded. Empty records writes anywhere. |
+| `sourceRoot` | `src` | Space-separated folders inside each tree whose writes are recorded, one or more. Empty records writes anywhere. |
+| `testFolder` | empty | A tests folder beside each source root, such as `tests`, for a repo that keeps tests apart from sources. Empty keeps the sibling rule below. Set, a write under a source root runs every test file under `<the root's parent>/<testFolder>/` whose name ends in a test suffix, a write under that folder is recorded too, and a red run names every writer recorded under that root. |
 | `testSuffixes` | `.test.ts .test.tsx` | Space-separated test suffixes. A source's sibling test swaps its extension for the matching suffix, and only those extensions are recorded. |
 | `runner` | `./node_modules/.bin/vitest run` | The command run from the tree's root with the test files appended. |
-| `logPath` | `/tmp/suite-shadow-<repo folder>.log` | Where the log lines go. An absolute path lands as written, a relative one joins the main tree's root. |
+| `logPath` | `/tmp/suite-shadow.log` | Where the log lines go. The default is rewritten to `/tmp/suite-shadow-<repo folder>.log`, one file per repo, so nothing lands in your work tree and two repos never share a file; a hand-set value equal to the default is rewritten the same way. Any other absolute path lands as written, a relative one joins the main tree's root. |
 | `worktreeDir` | `.claude/worktrees` | The folder holding one subfolder per worktree lane. |
 | `runTimeoutSeconds` | `60` | How long a stop waits on the scoped run. |
 | `sentinelPrefix` | empty | The declared-red sentinel's path prefix. Empty reads no sentinel. |
 | `sentinelTtlSeconds` | `1800` | A sentinel this old or older declares nothing. |
 | `gatePhrase` | empty | The phrase your shell test gate prints when the suite is red. Empty reads any block as `gate`. |
+
+## Per-repo options
+
+Claude Code reads `pluginConfigs` from your user settings, `~/.claude/settings.json`, so the
+options above are machine-wide: every repo on one machine runs the same block. This mod also reads
+the project's own settings through the engine, `.claude/settings.json` and then
+`.claude/settings.local.json` at the session root, and takes its own block from each, the entry
+under `pluginConfigs` whose key is `lane-blame@claude-lanes` or any key whose name before the `@` is
+`lane-blame`. A field set there wins over the user value, the local file over the project file, field
+by field. A field of the wrong type is ignored, as the engine ignores one, and a list option takes a
+JSON array as well as its string form. The read happens once per session, at the mod's first event,
+so a change to either file takes effect at the next session. A missing block changes nothing, and a
+block the engine cannot read leaves the user options standing. The block under "What this harness
+sets" is this repo's project block, and it is the one that loads here.
 
 ## What this harness sets
 
