@@ -1,5 +1,5 @@
 import { update } from 'claude-code'
-import type { AgentInfo, EngineInterface, PluginOptions, ProcessRunResult, Register } from 'claude-code'
+import type { AgentInfo, EngineInterface, FsEntry, PluginOptions, ProcessRunResult, Register } from 'claude-code'
 import type { Last, Memo, Writes } from '../types'
 
 // a shadow of the shell test gates: records who wrote what under the source root and logs the
@@ -16,11 +16,15 @@ const FILE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
 type Verdict = 'block' | 'pass' | 'unknown' | 'timeout' | 'memo' | 'skip'
 type Shell = 'pass' | 'suite' | 'gate' | `other:${string}`
 
-// every repo-specific value, read once per load from userConfig
+// every repo-specific value, built once per load from userConfig and this repo's own block
+// one source root with its slash, '' when the root is empty, and the tests folder beside it with
+// its slash, '' when no tests folder is set
+type Place = { prefix: string; folder: string }
 type Cfg = {
-  root: string
-  // the root plus its slash, '' when the root is empty
-  prefix: string
+  // the source roots as written, [''] when none is, which records writes anywhere
+  roots: string[]
+  places: Place[]
+  testFolder: string
   suffixes: string[]
   // the source extensions the suffixes imply, .test.ts gives .ts
   exts: string[]
@@ -40,7 +44,9 @@ type Cfg = {
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')
 const str = (v: unknown, d: string) => (typeof v === 'string' ? v : d)
 const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : d)
-const words = (s: string) => s.split(/\s+/).filter(w => w.length > 0)
+// a list option is a space string, or a JSON array where a settings file holds one
+const words = (v: unknown, d: string) =>
+  (Array.isArray(v) ? v.map(String) : [typeof v === 'string' ? v : d]).flatMap(s => s.split(/\s+/)).filter(w => w.length > 0)
 const trimSlashes = (s: string) => s.trim().replace(/^\.\//, '').replace(/^\/+|\/+$/g, '')
 
 const DEFAULT_LOG = '/tmp/suite-shadow.log'
@@ -54,19 +60,27 @@ const logOf = (raw: string) => {
 // shipped with when it is missing, the wrong type, or empty where empty means nothing.
 const cfgOf = (options: PluginOptions | undefined): Cfg => {
   const o = options ?? {}
-  const root = trimSlashes(str(o.sourceRoot, 'src'))
-  const prefix = root === '' ? '' : `${root}/`
-  const listed = words(str(o.testSuffixes, '.test.ts .test.tsx'))
+  const named = [...new Set(words(o.sourceRoot, 'src').map(trimSlashes))]
+  const roots = named.length === 0 || named.includes('') ? [''] : named
+  const testFolder = trimSlashes(str(o.testFolder, ''))
+  const places = roots.map(root => {
+    const parent = root.includes('/') ? root.slice(0, root.lastIndexOf('/') + 1) : ''
+    return { prefix: root === '' ? '' : `${root}/`, folder: testFolder === '' ? '' : `${parent}${testFolder}/` }
+  })
+  // a red is named under any root or any tests folder
+  const where = [...new Set(places.flatMap(pl => (pl.folder === '' ? [pl.prefix] : [pl.prefix, pl.folder])))].map(esc).join('|')
+  const listed = words(o.testSuffixes, '.test.ts .test.tsx')
   const suffixes = listed.length > 0 ? listed : ['.test.ts', '.test.tsx']
   const exts = [...new Set(suffixes.map(s => /\.[^.]+$/.exec(s)?.[0] ?? s))]
-  const argv = words(str(o.runner, './node_modules/.bin/vitest run'))
+  const argv = words(o.runner, './node_modules/.bin/vitest run')
   const runner = argv.length > 0 ? argv : ['./node_modules/.bin/vitest', 'run']
   const label = [runner[0]?.split('/').pop() ?? '', ...runner.slice(1)].join(' ')
   const worktrees = trimSlashes(str(o.worktreeDir, '.claude/worktrees')) || '.claude/worktrees'
   const alt = suffixes.map(esc).join('|')
   return {
-    root,
-    prefix,
+    roots,
+    places,
+    testFolder,
     suffixes,
     exts,
     runner,
@@ -79,11 +93,62 @@ const cfgOf = (options: PluginOptions | undefined): Cfg => {
     ttlS: num(o.sentinelTtlSeconds, 1800),
     phrase: str(o.gatePhrase, '').trim(),
     // one class wide enough that a (site) group or a [slug] route is named whole
-    testFile: new RegExp(`${esc(prefix)}[\\][A-Za-z0-9_.@()/-]+?(?:${alt})(?![A-Za-z0-9_.@()/-])`, 'g'),
+    testFile: new RegExp(`(?:${where})[\\][A-Za-z0-9_.@()/-]+?(?:${alt})(?![A-Za-z0-9_.@()/-])`, 'g'),
     worktree: new RegExp(`^(${esc(worktrees)}/[^/]+)(?:/|$)`),
     moved: new RegExp(`/${esc(worktrees)}/[^/]+/?$`),
   }
 }
+
+const MOD = 'lane-blame'
+// the manifest's declared type per option; a list option takes a JSON array of strings as well
+const DECLARED = new Map<string, 'string' | 'number' | 'list'>([
+  ['sourceRoot', 'list'],
+  ['testFolder', 'string'],
+  ['testSuffixes', 'list'],
+  ['runner', 'list'],
+  ['logPath', 'string'],
+  ['worktreeDir', 'string'],
+  ['runTimeoutSeconds', 'number'],
+  ['sentinelPrefix', 'string'],
+  ['sentinelTtlSeconds', 'number'],
+  ['gatePhrase', 'string'],
+])
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+const fits = (kind: 'string' | 'number' | 'list' | undefined, v: unknown) =>
+  kind === 'number'
+    ? typeof v === 'number'
+    : kind !== undefined && (typeof v === 'string' || (kind === 'list' && Array.isArray(v) && v.every(w => typeof w === 'string')))
+
+// Takes this mod's options from one settings source: the first pluginConfigs key, in file order,
+// whose name before the @ is this mod, lane-blame@claude-lanes among them. A field the manifest
+// does not declare, or one of the wrong type, is dropped, the engine's own counts-as-unset rule.
+const blockOf = (settings: unknown): Record<string, string | number | readonly string[]> => {
+  const configs = isRecord(settings) ? settings.pluginConfigs : undefined
+  if (!isRecord(configs)) return {}
+  const entry = Object.entries(configs).find(([key]) => key.split('@')[0] === MOD)?.[1]
+  const options = isRecord(entry) ? entry.options : undefined
+  if (!isRecord(options)) return {}
+  return Object.fromEntries(
+    Object.entries(options).filter((kv): kv is [string, string | number | string[]] => fits(DECLARED.get(kv[0]), kv[1])),
+  )
+}
+
+// the engine hands register the user block alone, so the project and local blocks are read here;
+// a source that will not read overrides nothing
+async function overridesOf($: EngineInterface) {
+  const project = await $.settings.read({ source: 'project' }).catch(() => ({}))
+  const local = await $.settings.read({ source: 'local' }).catch(() => ({}))
+  return { ...blockOf(project), ...blockOf(local) }
+}
+
+// one read per load, filled at the first event that needs config: tool.call fires on every call of
+// every agent, so the memo is what keeps it cheap. register clears it, a reload starts over
+let loaded: Promise<Cfg> | undefined
+const configOf = ($: EngineInterface, options: PluginOptions | undefined) =>
+  (loaded ??= overridesOf($).then(
+    over => cfgOf({ ...options, ...over }),
+    () => cfgOf(options),
+  ))
 
 // fnv-1a, 32 bit: the memo needs equality, not secrecy
 const hashOf = (text: string) => {
@@ -106,7 +171,11 @@ const relativeTo = (root: string, path: string) => {
   return bare.replace(/^\.\//, '')
 }
 const hasExt = (cfg: Cfg, path: string) => cfg.exts.some(x => path.endsWith(x))
-const armed = (cfg: Cfg, inner: string) => inner.startsWith(cfg.prefix) && !inner.startsWith('/') && hasExt(cfg, inner)
+const inRoot = (pl: Place, path: string) => path.startsWith(pl.prefix)
+const inFolder = (pl: Place, path: string) => pl.folder !== '' && path.startsWith(pl.folder)
+// a write under any root records, and with a tests folder set a write under that folder too
+const armed = (cfg: Cfg, inner: string) =>
+  !inner.startsWith('/') && hasExt(cfg, inner) && cfg.places.some(pl => inRoot(pl, inner) || inFolder(pl, inner))
 
 // Splits a session-root-relative path into the tree it lives in and its path inside that tree:
 // '<worktrees>/agent-x/src/a.ts' is src/a.ts in that worktree, 'src/a.ts' is the main tree's,
@@ -125,7 +194,7 @@ const treeOf = (cfg: Cfg, base: string, cwd: unknown) =>
 const resolve = (cwd: string, rel: string) => `${cwd.replace(/\/$/, '')}/${rel.replace(/^\.\//, '')}`
 
 // best effort over the shell's writing verbs; a miss only leaves a write unattributed
-const bashTargets = (cfg: Cfg, command: string) => {
+const bashTargets = (command: string) => {
   const out: string[] = []
   for (const stmt of command.split(/&&|\|\||[;\n|]/)) {
     const ws = stmt.match(/"[^"]*"|'[^']*'|\S+/g)?.map(w => w.replace(/^(["'])([\s\S]*)\1$/, '$2')) ?? []
@@ -140,18 +209,19 @@ const bashTargets = (cfg: Cfg, command: string) => {
     else if ((verb === 'sed' || verb === 'perl') && ws.some(w => /^-[a-zA-Z]*i/.test(w))) out.push(...args)
     else if ((verb === 'cp' || verb === 'mv' || verb === 'install') && args.length > 1) out.push(args.at(-1) ?? '')
   }
-  return out.filter(p => hasExt(cfg, p))
+  return out
 }
 
-// the paths one tool call writes, as the tool was given them
-const writtenPaths = (cfg: Cfg, input: unknown): string[] => {
+// the paths one tool call writes, as the tool was given them; it needs no config, so a call that
+// writes nothing returns before the settings read
+const writtenPaths = (input: unknown): string[] => {
   const args = (typeof input === 'object' && input !== null ? input : {}) as Record<string, unknown>
   const tool = String(args.tool)
   if (FILE_TOOLS.has(tool)) {
     const path = args.file_path ?? args.notebook_path
     return typeof path === 'string' ? [path] : []
   }
-  return tool === 'Bash' && typeof args.command === 'string' ? bashTargets(cfg, args.command) : []
+  return tool === 'Bash' && typeof args.command === 'string' ? bashTargets(args.command) : []
 }
 
 const withWriter = (writes: Writes | undefined, paths: string[], who: string): Writes => {
@@ -174,12 +244,15 @@ const testsOf = (cfg: Cfg, path: string): string[] => {
   return cfg.suffixes.filter(s => s.endsWith(ext)).map(s => `${stem}${s}`)
 }
 
-// a failing test belongs to whoever wrote it or the source beside it
+// a failing test belongs to whoever wrote it or the source beside it; one under a tests folder
+// belongs to every writer under that folder's root and the folder itself, no file being nearer
 const writersOf = (cfg: Cfg, failing: string, writes: Writes) => {
   const suffix = suffixOf(cfg, failing)
   const ext = suffix === undefined ? '' : (/\.[^.]+$/.exec(suffix)?.[0] ?? '')
   const source = suffix === undefined ? failing : `${failing.slice(0, -suffix.length)}${ext}`
-  return [...new Set([...(writes[failing] ?? []), ...(writes[source] ?? [])])]
+  const near = cfg.places.filter(pl => inFolder(pl, failing))
+  const owned = Object.keys(writes).filter(p => near.some(pl => inRoot(pl, p) || inFolder(pl, p)))
+  return [...new Set([...(writes[failing] ?? []), ...(writes[source] ?? []), ...owned.flatMap(p => writes[p] ?? [])])]
 }
 
 // the runner's FAIL lines only; a passing file named elsewhere in the output is never a red
@@ -212,7 +285,7 @@ const verdictOf = (cfg: Cfg, reds: string[], writes: Writes, stopper: string, li
 // when no phrase is set, suite when the gate phrase is in it, otherwise other: plus the reason's first five words, whitespace folded
 // so a tab or newline in the reason cannot split the log line.
 const shellOf = (cfg: Cfg, reason: string | undefined): Shell => {
-  const ws = words(reason ?? '')
+  const ws = words(reason ?? '', '')
   if (ws.length === 0) return 'pass'
   // no phrase set, so any block is the gate's
   if (cfg.phrase === '') return 'gate'
@@ -261,6 +334,7 @@ type Io = {
   now: () => Promise<number>
   live: () => Promise<Set<string>>
   exists: (path: string) => Promise<boolean>
+  list: (path: string) => Promise<FsEntry[]>
   run: (argv: string[], cwd: string) => Promise<ProcessRunResult>
   read: (path: string) => Promise<string>
   write: (path: string, text: string) => Promise<void>
@@ -290,6 +364,38 @@ async function dropGone(io: Io, all: Writes, tree: string) {
     if (await io.exists(`${io.root}/${t}`).catch(() => true)) continue
     await io.drop(Object.keys(all).filter(p => splitTree(io.cfg, p).tree === t))
   }
+}
+
+// every test file under one folder of a tree, a link never followed and a few levels at most;
+// a folder that will not list holds none
+async function listTests(io: Io, base: string, folder: string, depth = 0): Promise<string[]> {
+  if (depth > 6) return []
+  const entries = await io.list(`${base}/${folder}`).catch(() => [])
+  const out: string[] = []
+  for (const x of entries) {
+    const rel = `${folder}/${x.name}`
+    if (x.kind === 'dir') out.push(...(await listTests(io, base, rel, depth + 1)))
+    else if (x.kind === 'file' && suffixOf(io.cfg, rel) !== undefined) out.push(rel)
+  }
+  return out
+}
+
+// The tests one stop runs. A written test is its own. With no tests folder a source runs the
+// siblings that exist; with one, any other write under a root or its folder runs every test the
+// folder holds, found by listing it.
+async function testsFor(io: Io, tree: string, paths: string[]): Promise<string[]> {
+  const cfg = io.cfg
+  const base = treeRoot(io, tree)
+  const found = new Set<string>()
+  const folders = new Set<string>()
+  for (const p of paths) {
+    const own =
+      cfg.testFolder === '' || suffixOf(cfg, p) !== undefined ? [] : cfg.places.filter(pl => inRoot(pl, p) || inFolder(pl, p))
+    if (own.length > 0) for (const pl of own) folders.add(pl.folder.slice(0, -1))
+    else for (const t of testsOf(cfg, p)) if (await io.exists(`${base}/${t}`)) found.add(t)
+  }
+  for (const f of [...folders].sort()) for (const t of await listTests(io, base, f)) found.add(t)
+  return [...found].sort()
 }
 
 // porcelain v1 paths, the rename's new side; a quoted path stays quoted and so stays recorded
@@ -331,22 +437,23 @@ const sentinelOf = async (io: Io, tree: string) => {
 // One stop's shadow judgment over the stopping tree: scoped run, sentinel, map, log, status. A
 // lane in a worktree is judged in its worktree, the main loop and a shared-tree lane in the main
 // tree. Never answers for the gate, and every stop writes one line, an idle one would=skip, so a
-// loaded mod is told from an unloaded one. Undefined leaves the status entry as it was.
+// loaded mod is told from an unloaded one. Undefined, an idle stop, leaves the status entry as it
+// was; a stop whose every path a commit pruned judged the record clean, so it clears the entry.
 async function shadow(io: Io, who: string, all: Writes, shell: Shell, tree: string): Promise<Last | undefined> {
   const cfg = io.cfg
   await dropGone(io, all, tree)
   const mine = writesIn(cfg, all, tree)
   let paths = Object.keys(mine).sort()
   const where = tree === '' ? 'the main tree' : tree
-  const under = cfg.root === '' ? 'the tree' : cfg.root
+  const under = cfg.roots.includes('') ? 'the tree' : cfg.roots.join(', ')
   // a worktree stop names its tree at the end of run=, so the column count stays pinned
   const inTree = tree === '' ? '' : ` in ${tree}`
   const load = await loadOf(io)
-  const skip = async () => {
+  const skip = async (cleared?: Last) => {
     const run = `nothing armed, no recorded write under ${under} in ${where}`
     const at = await io.now()
     await appendLine(io, logLine({ at, who, failing: [], declared: [], writes: {}, would: 'skip', shell, load, run }))
-    return undefined
+    return cleared
   }
   if (paths.length === 0) return skip()
   // a commit moves HEAD and a new write moves seq, either one judges again
@@ -356,7 +463,7 @@ async function shadow(io: Io, who: string, all: Writes, shell: Shell, tree: stri
   )
   const held = await io.memo(tree)
   if (held?.head !== undefined && held.head !== head) paths = await prune(io, tree, paths)
-  if (paths.length === 0) return skip()
+  if (paths.length === 0) return skip({ reds: 0, owners: [] })
   const writes: Writes = Object.fromEntries(paths.map(p => [p, mine[p] ?? []]))
   const declared = await sentinelOf(io, tree)
   const memoKey = hashOf(`${paths.map(p => joinTree(tree, p)).join('\n')}\n${await io.seq()}\n${head}`)
@@ -369,8 +476,7 @@ async function shadow(io: Io, who: string, all: Writes, shell: Shell, tree: stri
     await appendLine(io, logLine({ at, who, failing, declared: failing.filter(f => declared.has(f)), writes, would: 'memo', shell, load, run }))
     return { reds: reds.length, owners: ownersOf(cfg, reds, writes) }
   }
-  const tests: string[] = []
-  for (const t of [...new Set(paths.flatMap(p => testsOf(cfg, p)))].sort()) if (await io.exists(`${treeRoot(io, tree)}/${t}`)) tests.push(t)
+  const tests = await testsFor(io, tree, paths)
   let failing: string[] = []
   let would: Verdict = 'pass'
   let ranRed = false
@@ -391,6 +497,9 @@ async function shadow(io: Io, who: string, all: Writes, shell: Shell, tree: stri
     } else {
       ranRed = ran.exitCode !== 0
       failing = ranRed ? failingFiles(cfg, `${ran.stdout}\n${ran.stderr}`) : []
+      // a runner that names no file, claude plugin test among them: with a tests folder every
+      // test that ran counts red, so the red still names the writers under each root
+      if (ranRed && failing.length === 0 && cfg.testFolder !== '') failing = [...tests]
       run = `${cfg.label} ${tests.join(' ')} exit ${ran.exitCode}`
     }
   }
@@ -438,6 +547,7 @@ async function ioOf($: EngineInterface, cfg: Cfg, base: string): Promise<Io> {
     now: () => $.clock.now(),
     live: async () => new Set((await $.agent.list()).filter(a => LIVE.includes(a.status)).map(a => a.id)),
     exists: path => $.fs.exists(path),
+    list: path => $.fs.list(path),
     run: (argv, cwd) => $.process.run(argv, { cwd, timeoutMs: cfg.timeoutMs }),
     read: path => $.fs.read(path),
     write: (path, text) => $.fs.write(path, text),
@@ -475,14 +585,17 @@ async function record($: EngineInterface, cfg: Cfg, base: string, absolute: stri
 }
 
 export const register: Register = (on, options) => {
-  const cfg = cfgOf(options)
+  loaded = undefined
 
   // record after the tool answers, so a denied write is never attributed; the result goes back
   // untouched, so the record can never change what the call did
   on('tool.call', async ($, e, next) => {
     const result = await next(e)
     if (result.deny !== undefined) return result
-    const raw = writtenPaths(cfg, e)
+    const given = writtenPaths(e)
+    if (given.length === 0) return result
+    const cfg = await configOf($, options)
+    const raw = given.filter(p => hasExt(cfg, p))
     if (raw.length === 0) return result
     const base = mainOf(cfg, await $.session.root())
     const who = e.agentId ?? COORDINATOR
@@ -505,6 +618,7 @@ export const register: Register = (on, options) => {
     const shell = await next(e)
     if (e.stop_hook_active) return shell
     try {
+      const cfg = await configOf($, options)
       const base = mainOf(cfg, await $.session.root())
       // after EnterWorktree the coordinator stops in the worktree its writes went to
       await judge($, cfg, base, COORDINATOR, shell.block, treeOf(cfg, base, e.cwd))
@@ -517,6 +631,7 @@ export const register: Register = (on, options) => {
   on('classic.SubagentStop', async ($, e, next) => {
     const shell = await next(e)
     try {
+      const cfg = await configOf($, options)
       const base = mainOf(cfg, await $.session.root())
       // the lane's own cwd; absent, the main tree
       const cwd = typeof e.cwd === 'string' ? e.cwd : base

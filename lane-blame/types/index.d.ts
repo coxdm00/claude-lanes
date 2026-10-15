@@ -1,5 +1,6 @@
-// src path relative to the session root to every writer seen this session, 'coordinator' for the
-// main loop; a worktree write keeps its worktree prefix, so two trees never share a key
+// a recorded path, under a source root or its tests folder and relative to the session root, to
+// every writer seen this session, 'coordinator' for the main loop; a worktree write keeps its
+// worktree prefix, so two trees never share a key
 export type Writes = Record<string, string[]>
 // the hash of the recorded paths, the write count, and HEAD at the last judged stop, with the
 // files that run named failing before the sentinel was subtracted, and the HEAD it was judged at
