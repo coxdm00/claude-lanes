@@ -26,7 +26,7 @@
       "name": "blast-radius",
       "source": {
         "source": "git-subdir",
-        "url": "anthropics/claude-code-playground",
+        "url": "https://github.com/anthropics/claude-code-playground.git",
         "path": "claude-code/mods/blast-radius",
         "ref": "main",
         "sha": "569c5283d9a0a7ee7938df85bb32e4f48cbb8c86"
@@ -37,7 +37,7 @@
       "name": "token-weather",
       "source": {
         "source": "git-subdir",
-        "url": "anthropics/claude-code-playground",
+        "url": "https://github.com/anthropics/claude-code-playground.git",
         "path": "claude-code/mods/token-weather",
         "ref": "main",
         "sha": "569c5283d9a0a7ee7938df85bb32e4f48cbb8c86"
@@ -47,8 +47,9 @@
     {
       "name": "token-usage",
       "source": {
-        "source": "github",
-        "repo": "Wicked-Sick-Ltd/token-usage",
+        "source": "git-subdir",
+        "url": "https://github.com/Wicked-Sick-Ltd/token-usage.git",
+        "path": ".",
         "ref": "main",
         "sha": "394ba4dc12e72cdc656d88534a84427b6f76ae6d"
       },
@@ -58,7 +59,7 @@
       "name": "agent-radar",
       "source": {
         "source": "git-subdir",
-        "url": "hamzafer/claude-code-mods",
+        "url": "https://github.com/hamzafer/claude-code-mods.git",
         "path": "mods/agent-radar",
         "ref": "main",
         "sha": "b6dc61604ca70452d6f6a3cd4daacf95cd32d0fb"
