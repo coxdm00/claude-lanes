@@ -18,6 +18,12 @@ claude plugin install lane-fence@claude-lanes --scope project
 claude plugin install lane-blame@claude-lanes --scope project
 ```
 
+The marketplace also lists two of Anthropic's playground mods as `git-subdir` entries, since their
+own marketplace sits in a subdirectory the `marketplace add` command cannot reach: `blast-radius`,
+which holds a destructive command and shows what it would change, and `token-weather`, a context
+forecast above the prompt. They install the same way, `blast-radius@claude-lanes` and
+`token-weather@claude-lanes`, and their code stays Anthropic's.
+
 Checked on Claude Code 2.1.300, where the function-hooks surface is current; a later build may
 move it, and CI pins that version so a change is a commit, never a surprise.
 

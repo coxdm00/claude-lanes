@@ -21,6 +21,24 @@
       "name": "lane-blame",
       "source": "./lane-blame",
       "description": "Who wrote the red: the test verdict attributed to the agent that wrote the file"
+    },
+    {
+      "name": "blast-radius",
+      "source": {
+        "source": "git-subdir",
+        "url": "anthropics/claude-code-playground",
+        "path": "claude-code/mods/blast-radius"
+      },
+      "description": "Anthropic's playground mod: holds rm -rf, git reset --hard, git clean, a force push, and a migration, and shows what each would change, with Proceed and Cancel"
+    },
+    {
+      "name": "token-weather",
+      "source": {
+        "source": "git-subdir",
+        "url": "anthropics/claude-code-playground",
+        "path": "claude-code/mods/token-weather"
+      },
+      "description": "Anthropic's playground mod: a live forecast of the context window, drawn above the prompt"
     }
   ]
 }
