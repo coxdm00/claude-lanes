@@ -1,6 +1,6 @@
 {
   "name": "lane-blame",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Records which agent wrote each source file across worktrees, runs the tests beside those writes at every Stop and SubagentStop, and logs who owns each red beside the shell gate's answer, never blocking",
   "author": {
     "name": "Dave Cox"
