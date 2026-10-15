@@ -1,0 +1,9 @@
+Vendored verbatim from github.com/ammil-industries/vale-signs-of-ai-writing
+Pinned at commit 305467b (2025-11-22). License CC BY-SA 4.0, see LICENSE beside this file.
+
+Do not edit these files. Narrow an over-firing rule with a per-rule switch in the repo-root
+.vale.ini, and re-add the narrowed variant under tools/vale-styles/CANON/ instead. Editing
+in place makes the next upstream refresh a merge conflict and quietly forks the attribution.
+
+Check upstream for updates on the roughly twelve-month rule-era review cycle noted in
+.claude/docs/backlog/BL-324.md. The feed is in meta.json.

@@ -81,6 +81,11 @@ Each option is a row under `/config`, stored in settings under `pluginConfigs.su
 
 ## What this harness sets
 
+Claude Code reads `pluginConfigs` from user or managed settings alone, so this block lives in
+`~/.claude/settings.json`, written by `claude plugin configure <id> --values-stdin` or by hand,
+and it is machine-wide: every repo on the machine runs the same values until a per-repo override
+ships. A block in a project `.claude/settings.json` never loads.
+
 The defaults are neutral. The harness this mod was first built for sets three options, which
 restore its old behaviour:
 

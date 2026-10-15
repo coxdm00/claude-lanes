@@ -1,0 +1,11 @@
+# symbolism vocabulary, era 2025-26, the narrowed replacement for the disabled community
+# Symbolism rule whose "reminder of" and "(stands|serves) as" fire on plain usage.
+# doubly binding on premises: the premise law says setup only, so a premise that reaches for
+# what a thing symbolizes has left its register before it has broken any word rule.
+extends: existence
+message: "symbolism vocabulary, state what it does, not what it symbolizes: '%s'"
+level: error
+ignorecase: true
+scope: text
+raw:
+  - "symboliz(es|ing|ed)|a\\ssymbol\\sof|emblematic\\sof"

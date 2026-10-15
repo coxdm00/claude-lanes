@@ -1,0 +1,13 @@
+# verb plus adverb tags, the King rule, from anti-slop.sh. RE2 has no lookahead, so instead of
+# the hook's exclude list (said only/finally/...) this uses a curated allowlist of manner
+# adverbs; the hook's broader [a-z]+ly form still runs at edit time.
+# lower value here than in DRIFT, since Video Oasis writes about films rather than dialogue.
+# it stays because quoted dialogue turns up in editorial prose and the cost of keeping it is
+# one paragraph-scoped regex.
+extends: existence
+message: "adverb on a tag verb, one strong word instead: '%s'"
+level: warning
+ignorecase: true
+scope: text
+tokens:
+  - '\b(said|asked|replied|whispered|muttered|murmured|shouted|snapped|smiled|laughed|spoke|stated|added|nodded|breathed|sighed)\s(softly|quietly|loudly|angrily|gently|slowly|quickly|sharply|breathlessly|knowingly|sadly|nervously|calmly|firmly|coldly|warmly|dryly|flatly|weakly|hoarsely|carefully|bitterly|eagerly|grimly|harshly|hesitantly|icily|impatiently|meekly|mockingly|patiently|playfully|politely|reassuringly|reluctantly|sheepishly|shyly|silently|smoothly|sternly|stiffly|suspiciously|tenderly|tersely|thoughtfully|uneasily|urgently|vaguely|warily|wearily|wistfully|wryly)\b'

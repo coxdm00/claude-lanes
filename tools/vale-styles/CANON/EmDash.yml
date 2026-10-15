@@ -1,0 +1,12 @@
+# the one rule that diverges hard from its DRIFT parent. DRIFT's EmDashPileup allows up to
+# three per paragraph and flags the fourth. Video Oasis bans the em-dash outright
+# (writing-style.md, Dave 2026-07-08), so the threshold here is one, not four.
+# the commit-msg hook already hard-rejects an em-dash in a commit subject; this is the same
+# ruling applied to the prose that ships.
+# level error, because unlike a judgment tell there is nothing to weigh: the character is out.
+extends: existence
+message: 'em-dash, house style forbids it entirely, use a comma or a period or restructure'
+level: error
+scope: text
+raw:
+  - '—'

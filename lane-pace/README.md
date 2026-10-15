@@ -83,6 +83,11 @@ folder, a bare `CC-<N>/` path under `bundleDir`, and a leading `~/` from `HOME`.
 
 ## What this harness sets
 
+Claude Code reads `pluginConfigs` from user or managed settings alone, so this block lives in
+`~/.claude/settings.json`, written by `claude plugin configure <id> --values-stdin` or by hand,
+and it is machine-wide: every repo on the machine runs the same values until a per-repo override
+ships. A block in a project `.claude/settings.json` never loads.
+
 The defaults suit a stranger's repo: no cap until the pace file says `quiet`, no seat rule, no
 ladder, and no brief check. The harness this mod was lifted from sets four options to get its old
 behaviour back, the Fable seat for `design-critic`, the ladder, and the brief-size script:

@@ -1,0 +1,13 @@
+# inflated words, the narrowed replacement for the disabled community Vocabulary rule, which
+# carries bare "boasts?" and "showcases?" and fires on legitimate film writing. this is
+# anti-slop.sh's calibrated list verbatim, so the hook and vale never disagree about a word;
+# the 2026-08-07 era-refresh tokens joined both once they ran zero-hit against the corpus
+# (delves, underscores, showcasing, commendable, excels, renowned). the list ages out on a
+# roughly twelve-month cycle, refresh both homes together.
+extends: existence
+message: "inflated word, swap for the plain one: '%s'"
+level: error
+ignorecase: true
+scope: text
+raw:
+  - "\\b(delve(s|d)?|delving|underscor(es|ing)|showcasing|commendable|excels|renowned|utiliz(e|es|ing)|facilitate(s|d)?|streamline(s|d)?|garner(s|ed)?|bolster(s|ed)?|catalyze(s|d)?|leverag(e|es|ing)|tapestry|testament|cornerstone|plethora|synergy|intricate|intricacies|meticulous(ly)?|multifaceted|transformative|groundbreaking|unparalleled|unwavering|cutting-edge|seamless(ly)?|furthermore|moreover|additionally|crucially|bustling)\\b|a\\stestament\\sto"

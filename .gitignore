@@ -1,2 +1,15 @@
 node_modules/
 */.claude-plugin/types/
+
+# personal harness state, never shared
+.claude/settings.local.json
+.claude/handoff/
+.claude/state/
+.claude/worktrees/
+.claude/scratchpad/
+# the engine's generated mod type folders, laid beside each mod by claude plugin validate
+.claude-plugin/types/
+
+# the vale binary tools/get-vale.sh fetches, never committed
+tools/bin/
+tools/.vale/

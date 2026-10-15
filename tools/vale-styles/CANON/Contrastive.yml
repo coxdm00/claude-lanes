@@ -1,0 +1,11 @@
+# the contrastive template, named in writing-style.md as a top mechanical offender and the
+# loudest structural tell in the catalog. the vendored community set lacks it entirely.
+# paragraph scope so a tell straddling a hard wrap still matches, which is the whole reason
+# vale sits beside the line-oriented hook.
+extends: existence
+message: "contrastive template, make the positive claim once, plainly: '%s'"
+level: error
+ignorecase: true
+scope: text
+raw:
+  - "(not|n't)\\s(just|only|merely|simply)\\s[^,.]+,\\s(but|it's|it\\sis|that's|they're|we're)|(it|that|this|here)('s|\\sis|\\swas)\\snot\\s[^,.]+,\\s(it's|that's|but)|not\\sabout\\s[^,.]+\\.\\s(it's|it\\sis)\\sabout|not\\sonly\\s[^,.]+,\\sbut"

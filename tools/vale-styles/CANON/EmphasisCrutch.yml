@@ -1,0 +1,10 @@
+# emphasis crutches and the negative-listing cadence, era 2025-26, from anti-slop.sh verbatim.
+# paragraph scope because the ". Not x. Not y." cadence crosses both sentence boundaries and
+# hard wraps, so a line-oriented grep sees half of it.
+extends: existence
+message: "emphasis crutch or negative listing, the sentence carries its own weight or it does not: '%s'"
+level: warning
+ignorecase: true
+scope: text
+raw:
+  - "(^|\\.\\s)(full\\sstop|plain\\sand\\ssimple|make\\sno\\smistake)[.!,]|\\.\\speriod\\.|\\bnot\\s[a-z']+\\.\\snot\\s[a-z']+\\."

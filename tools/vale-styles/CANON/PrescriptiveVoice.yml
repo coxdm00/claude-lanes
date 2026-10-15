@@ -1,0 +1,11 @@
+# prescriptive voice and vague attribution, era 2025-26, from anti-slop.sh verbatim.
+# overlaps the community Narrative rule but carries the vague-attribution forms that set lacks.
+# "studies show" and "experts agree" are the same offence editorial-voice.md names under
+# fake-neutral phrasing: a canon is one viewer's argument, so an unnamed authority is a dodge.
+extends: existence
+message: "prescriptive voice or vague attribution, name who says it or own it yourself: '%s'"
+level: warning
+ignorecase: true
+scope: text
+raw:
+  - "it\\sshould\\sbe\\s(remembered|noted)|one\\smust\\s(consider|remember|understand)|it\\sis\\sessential\\sto|studies\\sshow|experts\\sagree|research\\ssuggests"

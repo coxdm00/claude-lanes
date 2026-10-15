@@ -1,0 +1,12 @@
+# hedged superlatives, the narrowed replacement for the disabled community Enumeration rule,
+# whose bare "one of the most / one of the first" fires on checkable facts.
+# the carve matters more here than in DRIFT: a canon is an argument, and film writing makes
+# checkable ranking claims all the time. "one of the first slashers" is a fact with a year
+# behind it and stays legal; only the unfalsifiable opinion-adjective form flags.
+extends: existence
+message: "hedged superlative, commit to the claim in first person or cut it: '%s'"
+level: warning
+ignorecase: true
+scope: text
+raw:
+  - "one\\sof\\sthe\\smost\\s(important|significant|notable|remarkable|iconic|beloved|influential|impressive)|(arguably|perhaps)\\sthe\\smost"

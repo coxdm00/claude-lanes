@@ -1,0 +1,11 @@
+# canned notability and the challenges formula, era 2025-26, from anti-slop.sh verbatim.
+# "widely regarded as" is the one that matters most here: editorial-voice.md bans laundering
+# Dave's opinion through fake-neutral phrasing, and this is the exact phrase it names.
+# the community Symbolism rule has only the "plays a ... role" variant and is disabled anyway.
+extends: existence
+message: "canned notability or challenges formula, say what it did, or own the opinion in first person: '%s'"
+level: error
+ignorecase: true
+scope: text
+raw:
+  - "play(s|ed)?\\sa\\s(significant|pivotal|key|crucial|vital)\\srole|made\\ssignificant\\scontributions|widely\\sregarded\\sas|is\\snot\\swithout\\sits|faces\\s(several|many|numerous)\\schallenges"

@@ -1,0 +1,17 @@
+# stock phrases, anti-slop.sh's calibrated denylist verbatim. carries the "boasts a" puffery
+# form, bare boast(s) being the documented carve, and the checkable-versus-unfalsifiable
+# superlative split the community rules never make.
+# "in a world where" earns its slot twice over here: it is both a general stock phrase and the
+# single most-cited trailer and synopsis opener, which is exactly the register premises write in.
+#
+# ONE carve against anti-slop.sh's list, calibrated 2026-08-07. Bare "deep dive" is freed and
+# only "deep dive into|on" flags. Live specimen: docs/workflow-guide.md:67 calls /explain a
+# "read-only deep dive", which is the term of art for the skill, not puffery. Nothing real is
+# lost, since the slop form goes through the "(delve|dive) into" branch either way.
+extends: existence
+message: "stock phrase, say the thing plainly: '%s'"
+level: error
+ignorecase: true
+scope: text
+raw:
+  - "it'?s\\s(important|worth)\\s(to\\snote|noting|mentioning)|a\\stestament\\sto|(rich|intricate)\\stapestry|a\\stapestry\\sof|navigate\\sthe\\s(complexities|landscape)|in\\sthe\\srealm\\sof|in\\stoday'?s\\s(fast-paced|digital)\\s(world|age)|in\\sa\\sworld\\swhere|when\\sit\\scomes\\sto|(let'?s\\s)?(delve|dive)\\sinto|deep\\sdive\\s(into|on)\\b|shed\\slight\\son|at\\sthe\\send\\sof\\sthe\\sday|game.?changer|pave\\sthe\\sway|in\\s(conclusion|summary)|leave\\sno\\sstone\\sunturned|double-edged\\ssword|key\\stakeaway|ever-(evolving|changing|expanding)|cannot\\sbe\\soverstated|treasure\\strove|a\\splethora\\sof|wide\\sarray\\sof|embark\\son\\sa\\sjourney|unlock\\sthe\\s(potential|secrets)|harness\\sthe\\spower|unleash\\sthe|master\\sthe\\sart\\sof|at\\sthe\\sforefront\\sof|indelible\\smark|profound\\simpact|hustle\\sand\\sbustle|valuable\\sinsights|deeper\\sunderstanding|look\\sno\\sfurther|without\\sfurther\\sado|nestled\\sin\\sthe\\sheart|boasts?\\sa\\b|more\\s(crucial|important)\\sthan\\sever|evokes\\sa\\ssense\\sof|i\\shope\\sthis\\s(helps|message\\sfinds|finds\\syou\\swell)"

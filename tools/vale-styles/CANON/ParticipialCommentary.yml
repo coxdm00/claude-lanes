@@ -1,0 +1,11 @@
+# trailing participial commentary, the era 2025-26 signature tell: a fact, then a comma and an
+# -ing clause telling the reader what the fact means. the community set lacks the general form.
+# this is the trailing position only. the sentence-initial participial is CONTESTED in the
+# literature, an ACL 2025 parse found the reverse in news, so it is deliberately not here.
+extends: existence
+message: "trailing participial verdict, two facts, two sentences, no verdict: '%s'"
+level: error
+ignorecase: true
+scope: text
+tokens:
+  - ',\s(highlighting|underscoring|cementing|showcasing|demonstrating|solidifying|emphasizing|reinforcing|signaling|illustrating)\s(the|its|his|her|their|a|an|how|what)\b'
