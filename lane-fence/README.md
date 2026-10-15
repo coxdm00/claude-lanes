@@ -92,7 +92,7 @@ keeps each bundle's records under `.claude/features/CC-NNN/`, so it sets two opt
 ```json
 {
   "pluginConfigs": {
-    "fence": {
+    "lane-fence@claude-lanes": {
       "options": {
         "agentTypes": "code-reviewer,performance-reviewer,security-auditor,voice-reviewer,design-critic",
         "recordFolders": ".claude/features/CC-*/"

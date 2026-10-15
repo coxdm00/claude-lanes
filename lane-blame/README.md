@@ -87,7 +87,7 @@ restore its old behaviour:
 ```json
 {
   "pluginConfigs": {
-    "suite": {
+    "lane-blame@claude-lanes": {
       "options": {
         "sentinelPrefix": "/tmp/canon-declared-red-",
         "gatePhrase": "red before ending the turn",

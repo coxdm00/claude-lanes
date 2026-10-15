@@ -47,7 +47,7 @@ file, then install from the marketplace it names:
 
 ```sh
 claude plugin marketplace add /path/to/repo
-claude plugin install lane-lane-pace@claude-lanes
+claude plugin install lane-pace@claude-lanes
 ```
 
 Replace `<marketplace>` with the `name` in the root `.claude-plugin/marketplace.json`.
@@ -90,7 +90,7 @@ behaviour back, the Fable seat for `design-critic`, the ladder, and the brief-si
 ```json
 {
   "pluginConfigs": {
-    "pace": {
+    "lane-pace@claude-lanes": {
       "options": {
         "seatAgent": "design-critic",
         "ladder": true,
