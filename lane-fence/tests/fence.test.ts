@@ -1116,3 +1116,78 @@ test('the project block is read once per session, never on each Bash call', asyn
   expect(await passes($, 'echo x > .claude/features/CC-1/r.md', 'sec')).toContain('Write only under docs/reviews/,')
   expect(reads).toEqual(['project', 'local'])
 })
+
+// the reconcile's code findings, each red against 1.0.0
+test('an unplaceable target is refused, a home path, a variable, or a substitution', async ($, on) => {
+  const ran: string[] = []
+  engine(on, ran)
+  for (const [command, named] of [
+    ['echo x > ~/x.ts', '~/x.ts'],
+    ['echo x | tee $OUT', '$OUT'],
+    ['echo x > "$(pwd)/src/x.ts"', '$(pwd)/src/x.ts'],
+    ['touch `pwd`/src/x.ts', '`pwd`/src/x.ts'],
+  ]) {
+    const done = await $.tool.call(bash(command ?? '', 'rev'))
+    expect(done.deny, command).toContain(`this fence cannot place ${named ?? ''}, since`)
+  }
+  expect(ran).toEqual([])
+})
+
+test('git branch and tag that move a ref are refused, a bare listing passes', async ($, on) => {
+  const ran: string[] = []
+  engine(on, ran)
+  for (const [command, named] of [
+    ['git branch -f main HEAD~1', "'git branch'"],
+    ['git branch -D old', "'git branch'"],
+    ['git branch new-work', "'git branch'"],
+    ['git branch -v new-work', "'git branch'"],
+    ['git tag v9', "'git tag'"],
+    ['git tag -a v9 -m release', "'git tag'"],
+    ['git tag -d v1', "'git tag'"],
+    ['git update-ref refs/heads/main HEAD~1', "'git update-ref'"],
+  ]) {
+    const done = await $.tool.call(bash(command ?? '', 'rev'))
+    expect(done.deny, command).toContain(`may not run ${named ?? ''}`)
+  }
+  expect(ran).toEqual([])
+  const ok = [
+    'git branch',
+    'git branch -a -vv',
+    "git branch --list 'ln-*'",
+    'git branch --contains HEAD',
+    'git branch --show-current',
+    'git tag',
+    "git tag -l 'v1*'",
+    'git tag -n v1',
+  ]
+  for (const command of ok) expect((await $.tool.call(bash(command, 'rev'))).deny, command).toBeUndefined()
+  expect(ran).toEqual(ok)
+})
+
+test('a plain rsync is judged as a write to its destination', async ($, on) => {
+  const ran: string[] = []
+  engine(on, ran)
+  expect((await $.tool.call(bash('rsync /tmp/x.ts src/x.ts', 'rev'))).deny).toContain('/repo/src/x.ts is outside its record paths')
+  expect((await $.tool.call(bash('rsync -r /tmp/d/ src/', 'rev'))).deny).toContain('/repo/src is outside its record paths')
+  expect(ran).toEqual([])
+  const ok = ['rsync -r /repo/src/ tmp/s/', 'rsync --list-only /repo/src/']
+  for (const command of ok) expect((await $.tool.call(bash(command, 'rev'))).deny, command).toBeUndefined()
+  expect(ran).toEqual(ok)
+})
+
+test("deno eval is deno's inline form, and a Deno write call is a write", async ($, on) => {
+  const ran: string[] = []
+  engine(on, ran)
+  for (const command of [
+    `deno eval "Deno.writeTextFileSync('src/x.ts', 'x')"`,
+    `deno eval --ext ts "await Deno.writeFile('src/x.ts', new Uint8Array())"`,
+    `deno eval "Deno.removeSync('src/x.ts')"`,
+  ]) {
+    expect((await $.tool.call(bash(command, 'rev'))).deny, command).toContain('inline deno script')
+  }
+  expect(ran).toEqual([])
+  // a reading eval passes, and a python list's remove is no file write
+  const ok = [`deno eval "console.log(Deno.readTextFileSync('src/x.ts'))"`, `python3 -c "a = [1]; a.remove(1)"`]
+  for (const command of ok) expect((await $.tool.call(bash(command, 'rev'))).deny, command).toBeUndefined()
+  expect(ran).toEqual(ok)
+})

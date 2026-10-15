@@ -530,7 +530,7 @@ const GIT_GLOBAL_WITH_ARG = new Set([
   "--config-env",
 ]);
 // the subcommands that move the index, the work tree, or a ref; commit and add are judged by their
-// pathspecs below, branch and tag only list bare and pass
+// pathspecs below, branch and tag by refList
 const GIT_WRITES = new Set([
   "am",
   "apply",
@@ -547,7 +547,49 @@ const GIT_WRITES = new Set([
   "revert",
   "rm",
   "switch",
+  "update-ref",
 ]);
+
+// branch and tag only list with no name, or with a flag that puts them in list mode; a name
+// without one makes a ref, and a write flag moves or deletes one whatever else it carries
+const LIST_MODE = [
+  "-l",
+  "--list",
+  "--contains",
+  "--no-contains",
+  "--merged",
+  "--no-merged",
+  "--points-at",
+];
+const REF_FLAGS: Record<
+  "branch" | "tag",
+  { valued: string; writes: ReadonlySet<string>; lists: ReadonlySet<string> }
+> = {
+  branch: {
+    valued: "u",
+    writes: new Set(
+      "-d -D --delete -m -M --move -c -C --copy -f --force -u --set-upstream-to --unset-upstream --edit-description".split(
+        " ",
+      ),
+    ),
+    lists: new Set([...LIST_MODE, "--show-current"]),
+  },
+  tag: {
+    valued: "mFu",
+    writes: new Set(
+      "-d --delete -a --annotate -s --sign -u --local-user -m --message -F --file -f --force -e --edit".split(
+        " ",
+      ),
+    ),
+    lists: new Set([...LIST_MODE, "-n"]),
+  },
+};
+const refLists = (sub: "branch" | "tag", args: string[]) => {
+  const { valued, writes, lists } = REF_FLAGS[sub];
+  const flags = shortFlags(args, valued);
+  if (flags.some((flag) => writes.has(flag))) return false;
+  return operands(args).length === 0 || flags.some((flag) => lists.has(flag));
+};
 
 // a wrapper's own option values and operands sit between it and the command it runs, as in
 // timeout 60, nice -n 10, env -u HOME, or uv run --with requests
@@ -767,7 +809,9 @@ const SCRIPT_WRITES = new RegExp(
     String.raw`\bos\.(?:remove|unlink|rename|replace|makedirs|mkdir|rmdir|truncate)\(`,
     String.raw`\bshutil\.`,
     String.raw`\.(?:unlink|touch|mkdir|rename|replace)\(`,
-    String.raw`\b(?:writeFile|appendFile|createWriteStream|copyFile|cp|rm|rmdir|mkdir|rename|unlink|truncate|symlink)(?:Sync)?\(`,
+    String.raw`\b(?:writeFile|writeTextFile|appendFile|createWriteStream|copyFile|cp|rm|rmdir|mkdir|rename|unlink|truncate|symlink)(?:Sync)?\(`,
+    // Deno's own remove, named by its namespace so a python list's remove stays a read
+    String.raw`\bDeno\.remove(?:Sync)?\(`,
   ].join("|"),
 );
 const INLINE_FLAGS: ReadonlyArray<{
@@ -784,7 +828,10 @@ const inlineScript = (verb: string, args: string[]) => {
   const flags = INLINE_FLAGS.find((f) => f.verb.test(verb))?.flags;
   if (flags === undefined) return undefined;
   const at = args.findIndex((a) => flags.has(a));
-  return at >= 0 ? args[at + 1] : undefined;
+  if (at >= 0) return args[at + 1];
+  // deno's inline form is the eval subcommand, its code the last operand
+  const named = operands(args);
+  return verb === "deno" && named[0] === "eval" ? named.at(-1) : undefined;
 };
 
 // the interpreter flags that take a value, so the value is never read as a script file
@@ -1112,6 +1159,9 @@ const scan = (stmt: string, dir: string | null): Write[] => {
         to: paths([operands(args).at(-1)]),
       },
     ];
+  // a plain rsync copies into its last operand; with one operand it only lists
+  if (verb === "rsync" && operands(args).length >= 2)
+    return [...writes, ...paths([operands(args).at(-1)])];
   if (verb === "tar" && tarExtracts(args))
     return [
       ...writes,
@@ -1186,7 +1236,9 @@ const scan = (stmt: string, dir: string | null): Write[] => {
     }
     const stashWrites =
       sub === "stash" && !["list", "show"].includes(args[j + 1] ?? "");
-    if (GIT_WRITES.has(sub) || stashWrites)
+    const refMoves =
+      (sub === "branch" || sub === "tag") && !refLists(sub, args.slice(j + 1));
+    if (GIT_WRITES.has(sub) || stashWrites || refMoves)
       return [...writes, { git: `git ${sub}` }];
   }
   return writes;
@@ -1349,7 +1401,16 @@ export const register: Register = (on, options) => {
           : `${write.base}/${write.path}`;
     // a path write judged where it lands: its refusal, or undefined to go on
     const judge = async (write: PathWrite) => {
-      if (!placeable(write.path)) return undefined;
+      // the shell builds this target at run time, so no stat can place it before the call runs
+      if (!placeable(write.path))
+        return refuse(
+          write.path,
+          unplacedText(
+            who,
+            write.path,
+            "it holds a variable, a substitution, or a home path the shell expands at run time",
+          ),
+        );
       if (write.base === null && !write.path.startsWith("/"))
         return refuse(`${write.path} after a cd`, lostText(who, write.path));
       const base = write.base ?? cwd;
