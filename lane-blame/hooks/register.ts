@@ -16,7 +16,7 @@ const FILE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
 type Verdict = 'block' | 'pass' | 'unknown' | 'timeout' | 'memo' | 'skip'
 type Shell = 'pass' | 'suite' | 'gate' | `other:${string}`
 
-// every repo-specific value, read once per load from userConfig
+// every repo-specific value, built once per load from userConfig and this repo's own block
 type Cfg = {
   root: string
   // the root plus its slash, '' when the root is empty
@@ -40,7 +40,9 @@ type Cfg = {
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')
 const str = (v: unknown, d: string) => (typeof v === 'string' ? v : d)
 const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : d)
-const words = (s: string) => s.split(/\s+/).filter(w => w.length > 0)
+// a list option is a space string, or a JSON array where a settings file holds one
+const words = (v: unknown, d: string) =>
+  (Array.isArray(v) ? v.map(String) : [typeof v === 'string' ? v : d]).flatMap(s => s.split(/\s+/)).filter(w => w.length > 0)
 const trimSlashes = (s: string) => s.trim().replace(/^\.\//, '').replace(/^\/+|\/+$/g, '')
 
 const DEFAULT_LOG = '/tmp/suite-shadow.log'
@@ -56,10 +58,10 @@ const cfgOf = (options: PluginOptions | undefined): Cfg => {
   const o = options ?? {}
   const root = trimSlashes(str(o.sourceRoot, 'src'))
   const prefix = root === '' ? '' : `${root}/`
-  const listed = words(str(o.testSuffixes, '.test.ts .test.tsx'))
+  const listed = words(o.testSuffixes, '.test.ts .test.tsx')
   const suffixes = listed.length > 0 ? listed : ['.test.ts', '.test.tsx']
   const exts = [...new Set(suffixes.map(s => /\.[^.]+$/.exec(s)?.[0] ?? s))]
-  const argv = words(str(o.runner, './node_modules/.bin/vitest run'))
+  const argv = words(o.runner, './node_modules/.bin/vitest run')
   const runner = argv.length > 0 ? argv : ['./node_modules/.bin/vitest', 'run']
   const label = [runner[0]?.split('/').pop() ?? '', ...runner.slice(1)].join(' ')
   const worktrees = trimSlashes(str(o.worktreeDir, '.claude/worktrees')) || '.claude/worktrees'
@@ -84,6 +86,56 @@ const cfgOf = (options: PluginOptions | undefined): Cfg => {
     moved: new RegExp(`/${esc(worktrees)}/[^/]+/?$`),
   }
 }
+
+const MOD = 'lane-blame'
+// the manifest's declared type per option; a list option takes a JSON array of strings as well
+const DECLARED = new Map<string, 'string' | 'number' | 'list'>([
+  ['sourceRoot', 'list'],
+  ['testSuffixes', 'list'],
+  ['runner', 'list'],
+  ['logPath', 'string'],
+  ['worktreeDir', 'string'],
+  ['runTimeoutSeconds', 'number'],
+  ['sentinelPrefix', 'string'],
+  ['sentinelTtlSeconds', 'number'],
+  ['gatePhrase', 'string'],
+])
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+const fits = (kind: 'string' | 'number' | 'list' | undefined, v: unknown) =>
+  kind === 'number'
+    ? typeof v === 'number'
+    : kind !== undefined && (typeof v === 'string' || (kind === 'list' && Array.isArray(v) && v.every(w => typeof w === 'string')))
+
+// Takes this mod's options from one settings source: the first pluginConfigs key, in file order,
+// whose name before the @ is this mod, lane-blame@claude-lanes among them. A field the manifest
+// does not declare, or one of the wrong type, is dropped, the engine's own counts-as-unset rule.
+const blockOf = (settings: unknown): Record<string, string | number | readonly string[]> => {
+  const configs = isRecord(settings) ? settings.pluginConfigs : undefined
+  if (!isRecord(configs)) return {}
+  const entry = Object.entries(configs).find(([key]) => key.split('@')[0] === MOD)?.[1]
+  const options = isRecord(entry) ? entry.options : undefined
+  if (!isRecord(options)) return {}
+  return Object.fromEntries(
+    Object.entries(options).filter((kv): kv is [string, string | number | string[]] => fits(DECLARED.get(kv[0]), kv[1])),
+  )
+}
+
+// the engine hands register the user block alone, so the project and local blocks are read here;
+// a source that will not read overrides nothing
+async function overridesOf($: EngineInterface) {
+  const project = await $.settings.read({ source: 'project' }).catch(() => ({}))
+  const local = await $.settings.read({ source: 'local' }).catch(() => ({}))
+  return { ...blockOf(project), ...blockOf(local) }
+}
+
+// one read per load, filled at the first event that needs config: tool.call fires on every call of
+// every agent, so the memo is what keeps it cheap. register clears it, a reload starts over
+let loaded: Promise<Cfg> | undefined
+const configOf = ($: EngineInterface, options: PluginOptions | undefined) =>
+  (loaded ??= overridesOf($).then(
+    over => cfgOf({ ...options, ...over }),
+    () => cfgOf(options),
+  ))
 
 // fnv-1a, 32 bit: the memo needs equality, not secrecy
 const hashOf = (text: string) => {
@@ -125,7 +177,7 @@ const treeOf = (cfg: Cfg, base: string, cwd: unknown) =>
 const resolve = (cwd: string, rel: string) => `${cwd.replace(/\/$/, '')}/${rel.replace(/^\.\//, '')}`
 
 // best effort over the shell's writing verbs; a miss only leaves a write unattributed
-const bashTargets = (cfg: Cfg, command: string) => {
+const bashTargets = (command: string) => {
   const out: string[] = []
   for (const stmt of command.split(/&&|\|\||[;\n|]/)) {
     const ws = stmt.match(/"[^"]*"|'[^']*'|\S+/g)?.map(w => w.replace(/^(["'])([\s\S]*)\1$/, '$2')) ?? []
@@ -140,18 +192,19 @@ const bashTargets = (cfg: Cfg, command: string) => {
     else if ((verb === 'sed' || verb === 'perl') && ws.some(w => /^-[a-zA-Z]*i/.test(w))) out.push(...args)
     else if ((verb === 'cp' || verb === 'mv' || verb === 'install') && args.length > 1) out.push(args.at(-1) ?? '')
   }
-  return out.filter(p => hasExt(cfg, p))
+  return out
 }
 
-// the paths one tool call writes, as the tool was given them
-const writtenPaths = (cfg: Cfg, input: unknown): string[] => {
+// the paths one tool call writes, as the tool was given them; it needs no config, so a call that
+// writes nothing returns before the settings read
+const writtenPaths = (input: unknown): string[] => {
   const args = (typeof input === 'object' && input !== null ? input : {}) as Record<string, unknown>
   const tool = String(args.tool)
   if (FILE_TOOLS.has(tool)) {
     const path = args.file_path ?? args.notebook_path
     return typeof path === 'string' ? [path] : []
   }
-  return tool === 'Bash' && typeof args.command === 'string' ? bashTargets(cfg, args.command) : []
+  return tool === 'Bash' && typeof args.command === 'string' ? bashTargets(args.command) : []
 }
 
 const withWriter = (writes: Writes | undefined, paths: string[], who: string): Writes => {
@@ -212,7 +265,7 @@ const verdictOf = (cfg: Cfg, reds: string[], writes: Writes, stopper: string, li
 // when no phrase is set, suite when the gate phrase is in it, otherwise other: plus the reason's first five words, whitespace folded
 // so a tab or newline in the reason cannot split the log line.
 const shellOf = (cfg: Cfg, reason: string | undefined): Shell => {
-  const ws = words(reason ?? '')
+  const ws = words(reason ?? '', '')
   if (ws.length === 0) return 'pass'
   // no phrase set, so any block is the gate's
   if (cfg.phrase === '') return 'gate'
@@ -475,14 +528,17 @@ async function record($: EngineInterface, cfg: Cfg, base: string, absolute: stri
 }
 
 export const register: Register = (on, options) => {
-  const cfg = cfgOf(options)
+  loaded = undefined
 
   // record after the tool answers, so a denied write is never attributed; the result goes back
   // untouched, so the record can never change what the call did
   on('tool.call', async ($, e, next) => {
     const result = await next(e)
     if (result.deny !== undefined) return result
-    const raw = writtenPaths(cfg, e)
+    const given = writtenPaths(e)
+    if (given.length === 0) return result
+    const cfg = await configOf($, options)
+    const raw = given.filter(p => hasExt(cfg, p))
     if (raw.length === 0) return result
     const base = mainOf(cfg, await $.session.root())
     const who = e.agentId ?? COORDINATOR
@@ -505,6 +561,7 @@ export const register: Register = (on, options) => {
     const shell = await next(e)
     if (e.stop_hook_active) return shell
     try {
+      const cfg = await configOf($, options)
       const base = mainOf(cfg, await $.session.root())
       // after EnterWorktree the coordinator stops in the worktree its writes went to
       await judge($, cfg, base, COORDINATOR, shell.block, treeOf(cfg, base, e.cwd))
@@ -517,6 +574,7 @@ export const register: Register = (on, options) => {
   on('classic.SubagentStop', async ($, e, next) => {
     const shell = await next(e)
     try {
+      const cfg = await configOf($, options)
       const base = mainOf(cfg, await $.session.root())
       // the lane's own cwd; absent, the main tree
       const cwd = typeof e.cwd === 'string' ? e.cwd : base

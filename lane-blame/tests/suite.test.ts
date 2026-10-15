@@ -33,6 +33,8 @@ type World = {
   dirs?: string[]
   // where the session runs, $.session.cwd(); absent, the call is refused
   cwd?: string
+  // what $.settings.read answers per source; absent, the read is refused as no stub answers it
+  settings?: Partial<Record<'project' | 'local', Record<string, unknown>>> | 'refused'
 }
 type Seen = {
   runs: string[][]
@@ -42,13 +44,15 @@ type Seen = {
   bounds: Array<number | undefined>
   files: Record<string, string>
   shown: Array<string | undefined>
+  // the source of each settings read, in order
+  reads: string[]
 }
 
 const lane = (id: string): AgentInfo => ({ id, status: 'running', type: 'general-purpose', description: `lane ${id}` })
 
 // the engine beneath the mod: tools that write, a vitest that answers, the files, and the shell gates
 function engine(on: On, world: World): Seen {
-  const seen: Seen = { runs: [], cwds: [], heads: [], bounds: [], files: { '/proc/loadavg': '3.10 2.00 1.00 2/900 1234\n' }, shown: [] }
+  const seen: Seen = { runs: [], cwds: [], heads: [], bounds: [], files: { '/proc/loadavg': '3.10 2.00 1.00 2/900 1234\n' }, shown: [], reads: [] }
   let clock = world.clockStart ?? 0
   on('session.root', () => ({ value: '/repo' }))
   on('clock.now', () => ({ value: clock }))
@@ -81,6 +85,13 @@ function engine(on: On, world: World): Seen {
       value: { exitCode: world.exitCode, stdout: world.output, stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
     }
   })
+  const planted = world.settings
+  if (planted !== undefined)
+    on('settings.read', (_, e) => {
+      seen.reads.push(e.source ?? 'merged')
+      if (planted === 'refused') return { deny: 'settings unreadable' }
+      return { value: e.source === 'project' || e.source === 'local' ? (planted[e.source] ?? {}) : {} }
+    })
   on('ui.status', (_, e) => {
     seen.shown.push(e.text)
     return { value: undefined }
@@ -109,6 +120,7 @@ const write = (path: string, agentId?: string) => ({
   content: 'x',
   ...(agentId === undefined ? {} : { agentId }),
 })
+const read = (path: string) => ({ tool: 'Read' as const, tool_use_id: 'toolu_test', file_path: path })
 const notebook = (path: string, agentId?: string) => ({
   tool: 'NotebookEdit' as const,
   tool_use_id: 'toolu_test',
@@ -728,4 +740,86 @@ test('gatePhrase set to its own words reads suite on them and other on the defau
   await $.classic.Stop({ stop_hook_active: false })
   expect(lines(seen)[0]).toContain('shell=other:tests are red before ending')
   expect(lines(seen)[1]).toContain('shell=suite')
+})
+
+// the per-repo options read: the project block, then the local one, over the user options
+
+const block = (options: Record<string, unknown>, key = 'lane-blame@claude-lanes') => ({ pluginConfigs: { [key]: { options } } })
+
+test(
+  'a project block field wins over the user value, local over project',
+  { options: { sourceRoot: 'lib', runner: 'node_modules/.bin/mocha' } },
+  async ($, on) => {
+    const world: World = {
+      tests: ['app/a.test.ts', 'lib/a.test.ts'],
+      output: '',
+      exitCode: 0,
+      live: [],
+      settings: {
+        project: {
+          pluginConfigs: {
+            'lane-fence@claude-lanes': { options: { sourceRoot: 'elsewhere' } },
+            'lane-blame@claude-lanes': { options: { sourceRoot: 'app', runner: 'node_modules/.bin/ava', runTimeoutSeconds: 5 } },
+          },
+        },
+        // another marketplace's key still names this mod, and a list takes a JSON array
+        local: block({ runner: ['node_modules/.bin/jest', '--ci'] }, 'lane-blame@elsewhere'),
+      },
+    }
+    const seen = engine(on, world)
+    // a call that writes nothing never waits on the read
+    await $.tool.call(read('/repo/app/a.ts'))
+    expect(seen.reads).toEqual([])
+    await $.tool.call(edit('/repo/app/a.ts'))
+    await $.tool.call(edit('/repo/lib/a.ts'))
+    await $.classic.Stop({ stop_hook_active: false })
+    await $.classic.Stop({ stop_hook_active: false })
+    expect(seen.runs).toEqual([['node_modules/.bin/jest', '--ci', 'app/a.test.ts']])
+    expect(seen.bounds).toEqual([5_000])
+    // once per session, project then local
+    expect(seen.reads).toEqual(['project', 'local'])
+  },
+)
+
+test('a wrong-typed project field is ignored and the user value stands', { options: { sourceRoot: 'lib' } }, async ($, on) => {
+  const world: World = {
+    tests: ['lib/a.test.ts', 'app/a.test.ts'],
+    output: '',
+    exitCode: 0,
+    live: [],
+    settings: { project: block({ sourceRoot: 5, runTimeoutSeconds: '5', runner: ['jest', 3], gatePhrase: true }) },
+  }
+  const seen = engine(on, world)
+  await $.tool.call(edit('/repo/lib/a.ts'))
+  await $.tool.call(edit('/repo/app/a.ts'))
+  await $.classic.Stop({ stop_hook_active: false })
+  expect(seen.runs).toEqual([['./node_modules/.bin/vitest', 'run', 'lib/a.test.ts']])
+  expect(seen.bounds).toEqual([60_000])
+  expect(seen.reads).toEqual(['project', 'local'])
+})
+
+test('no project block changes nothing', { options: { sourceRoot: 'lib' } }, async ($, on) => {
+  const world: World = {
+    tests: ['lib/a.test.ts', 'src/a.test.ts'],
+    output: '',
+    exitCode: 0,
+    live: [],
+    settings: { project: { pluginConfigs: { 'lane-pace@claude-lanes': { options: { quietCap: 4 } } } }, local: {} },
+  }
+  const seen = engine(on, world)
+  await $.tool.call(edit('/repo/lib/a.ts'))
+  await $.tool.call(edit('/repo/src/a.ts'))
+  await $.classic.Stop({ stop_hook_active: false })
+  expect(seen.runs).toEqual([['./node_modules/.bin/vitest', 'run', 'lib/a.test.ts']])
+  expect(seen.reads).toEqual(['project', 'local'])
+})
+
+test('a settings read that rejects leaves the user options standing', { options: { sourceRoot: 'lib' } }, async ($, on) => {
+  const world: World = { tests: ['lib/a.test.ts', 'src/a.test.ts'], output: '', exitCode: 0, live: [], settings: 'refused' }
+  const seen = engine(on, world)
+  await $.tool.call(edit('/repo/lib/a.ts'))
+  await $.tool.call(edit('/repo/src/a.ts'))
+  await $.classic.Stop({ stop_hook_active: false })
+  expect(seen.runs).toEqual([['./node_modules/.bin/vitest', 'run', 'lib/a.test.ts']])
+  expect(seen.reads).toEqual(['project', 'local'])
 })
