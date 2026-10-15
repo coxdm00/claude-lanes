@@ -435,10 +435,12 @@ export const register: Register = (on, options) => {
               `lets through, and runs the parent's ${e.parentModel}. Respawn it with no model, and the flag runs ` +
               `CLAUDE_CODE_SUBAGENT_MODEL "${env.plain}" instead.`,
           }
-        // inside a lane the respawn meets the ladder next, so it is told the parent's passes
+        // inside a lane the respawn meets the ladder next, so it is told the passes below both the
+        // parent and the seat, never the model it was just refused for
+        const seat = TIER.indexOf(C.seatModel as never)
         const parent = e.parentAgentId === undefined ? undefined : tierOf(e.parentModel)
         return {
-          deny: `${rule}Respawn this ${e.subagentType} lane with ${parent === undefined ? `model: "${TIER[Math.max(TIER.indexOf(C.seatModel as never) - 1, 0)]}"` : PASSES[parent]}.`,
+          deny: `${rule}Respawn this ${e.subagentType} lane with ${parent === undefined ? `model: "${TIER[Math.max(seat - 1, 0)]}"` : PASSES[Math.min(parent, seat)]}.`,
         }
       }
       // after the fable rule, the top rung, and before the brief so a refused rung runs no script

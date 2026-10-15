@@ -1375,3 +1375,20 @@ test('a settings read that rejects leaves the user options standing', { options:
   await $.turn.complete(mainTurn())
   expect(status.at(-1)).toBe('pace quiet, 3 of 4 lanes')
 })
+
+// a nested seat refusal offers the passes below both the parent and the seat, never the model refused
+for (const [seat, parent, told] of [
+  ['opus', 'fable', 'model: "sonnet" or "haiku"'],
+  ['sonnet', 'opus', 'model: "haiku"'],
+] as const)
+  test(
+    `a nested refusal on the ${seat} seat never offers ${seat} back, the parent on ${parent}`,
+    { options: { ...HARNESS, seatModel: seat } },
+    async ($, on) => {
+      engine(on, 'wide', [], [], AGENT_FILES)
+      expect((await $.agent.spawn(nested(parent, seat))).deny).toBe(
+        `${seat === 'opus' ? 'An' : 'A'} ${seat === 'opus' ? 'Opus' : 'Sonnet'} pin is for a judgment seat, and ` +
+          `design-critic is the only one. Respawn this general-purpose lane with ${told}.`,
+      )
+    },
+  )
