@@ -6,12 +6,14 @@ It sits on the engine's `agent.spawn` event and judges every subagent before it 
 Claude Code's own `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` is a fixed cap per session. The pace
 word, the model ladder, the judgment seat, and the brief check below have no built-in.
 
-- **A cap on live lanes.** A one-word file says `quiet` or `wide`. Under `quiet`, a third live
-  subagent is refused, and the refusal names every lane still running so you can see who holds the
-  slots. Under `wide` there is no cap. The file lifts the cap only when it reads exactly `wide`
-  once spaces and newlines are trimmed; any other content, an empty file and `Wide` included, reads
-  `quiet`. A missing file, or one that cannot be read, reads `wide`, so a fresh install caps nothing
-  until you write `quiet` to it.
+- **A cap on live lanes.** A one-word file names the pace. Under `quiet`, a third live subagent is
+  refused, and the refusal names every lane still running so you can see who holds the slots. Under
+  `wide` there is no cap. The `paces` option adds more words, each with its own cap, so `calm=1
+  busy=4` gives three tiers: one lane, two, and four. The file lifts the cap only when it reads
+  exactly `wide` once spaces and newlines are trimmed. Any other content, an empty file and `Wide`
+  included, reads as the word with the smallest cap, which is `quiet` until you add a smaller one. A
+  missing file, or one that cannot be read, reads `wide`, so a fresh install caps nothing until you
+  write a capped word to it.
 - **One judgment seat on the top model.** Once you name a seat agent, any subagent that would run on
   the seat model, Fable by default, is refused unless it is that one agent type. This holds under
   `wide` too, and for the main session's spawns as well as nested ones. With no seat agent named,
@@ -30,11 +32,12 @@ word, the model ladder, the judgment seat, and the brief check below have no bui
 - **A verdict record.** Each verdict bumps one store key, `lane-pace.verdict.<kind>`, holding the
   session id, the time, and a running count, so you can tell the mod has acted. The kinds are
   `fable`, `ladder`, `brief`, `brief-open`, `brief-unchecked`, `resume`, `cap`, `wide`, and `quiet`.
+  A pass under any capped word writes `quiet`, whichever word the file holds.
   The `fable` key keeps that name whatever `seatModel` is set to. One spawn can bump two keys: a
   resume writes `resume` and then the pace key it meets, and a brief check that fails open writes
   `brief-unchecked` and then the pace key.
-- **A status entry.** The status line shows the lane count, `pace quiet, 1 of 2 lanes`, redrawn at
-  every turn end so a refusal never outlives its turn.
+- **A status entry.** The status line shows the word and the lane count, `pace quiet, 1 of 2
+  lanes`, redrawn at every turn end so a refusal never outlives its turn.
 
 Anything the mod cannot judge, it lets through: every hook fails open.
 
@@ -60,8 +63,9 @@ settings, or per repo as the next section says. Relative paths read under the se
 
 | Option | Type | Default | What it does |
 | --- | --- | --- | --- |
-| `paceFile` | string | `.claude/state/pace` | File holding the pace word, `quiet` or `wide`. Missing reads `wide`. A cap refusal tells the model to write `wide` to this file. |
+| `paceFile` | string | `.claude/state/pace` | File holding the pace word: `quiet`, `wide`, or a word `paces` names. Missing reads `wide`. A cap refusal tells the model to write a word with a higher cap, or `wide`, to this file. |
 | `quietCap` | number | `2` | Live subagents allowed at once under `quiet`. `0` refuses every spawn under `quiet`. A fraction rounds down, and a negative number falls back to `2`. |
+| `paces` | string | empty | More pace words with their caps, a space list of `word=cap` pairs such as `calm=1 busy=4`. A cap is a whole number. A pair naming `wide` is dropped, since `wide` is always uncapped, and so is any pair not in the `word=cap` shape. `quiet` keeps `quietCap` unless a pair names it. A word the list does not name reads the smallest cap. Empty leaves `quiet` the one capped word. |
 | `seatAgent` | string | empty | The one subagent type allowed on the seat model. Empty turns the seat rule off. |
 | `seatModel` | `sonnet`, `opus`, `fable` | `fable` | The model refused to every subagent but the seat. Any other value, `haiku` included, falls back to `fable`. |
 | `agentsDir` | string | `.claude/agents` | Folder of project agent files whose frontmatter `model:` pin the mod reads. `~/.claude/agents` is read after it. |
@@ -139,14 +143,16 @@ so the respawn it advises clears the ladder too.
 
 ## Status line
 
-The mod writes one entry to the status line. Under `quiet` it reads `pace quiet, 1 of 2 lanes`, or
-`pace quiet, 2 of 2 lanes, spawn refused` on a cap refusal; under `wide` it reads `pace wide`. A
+The mod writes one entry to the status line. Under a capped word it reads `pace <word>, n of cap
+lanes`, as in `pace quiet, 1 of 2 lanes`, or `pace quiet, 2 of 2 lanes, spawn refused` on a cap
+refusal. A word the `paces` map does not name shows as the word whose cap it reads. Under `wide`
+it reads `pace wide`. A
 refusal by another rule writes its own text: `fable subagent refused`, with the seat model's name
 in place of `fable`, `model ladder, spawn refused`, `brief over its caps, spawn refused`, or
 `brief the size check could not parse, spawn refused`. A check that fails open puts its reason in
 front of the pace entry, so the next status write cannot erase it. At every turn end the entry is
-redrawn from the live count: `wide`, or `quiet` with no lane live, clears it, so `pace wide` lasts
-only until the turn ends.
+redrawn from the live count: `wide`, or a capped word with no lane live, clears it, so `pace wide`
+lasts only until the turn ends.
 
 ## Checked on
 

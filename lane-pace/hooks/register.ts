@@ -4,6 +4,8 @@ import type { AgentInfo, AgentSpawnInput, PluginOptions, Register } from 'claude
 export type Config = {
   paceFile: string
   quietCap: number
+  // each pace word and its cap, smallest cap first, quiet always among them
+  paces: ReadonlyArray<readonly [string, number]>
   seatAgent: string
   seatModel: string
   agentsDir: string
@@ -17,6 +19,7 @@ export type Config = {
 export const DEFAULTS: Config = {
   paceFile: '.claude/state/pace',
   quietCap: 2,
+  paces: [['quiet', 2]],
   // empty turns the seat rule off, so a fresh install refuses no model
   seatAgent: '',
   seatModel: 'fable',
@@ -29,22 +32,37 @@ export const DEFAULTS: Config = {
   briefPattern: '',
 }
 const str = (v: unknown, d: string) => (typeof v === 'string' ? v : d)
+// a space list of word=cap pairs, the first spelling of a word kept. wide is never a pair, since it
+// is the uncapped word, and quiet keeps quietCap unless a pair names it
+const pacesOf = (text: string, quietCap: number): Config['paces'] => {
+  const caps = new Map<string, number>()
+  for (const pair of text.split(/\s+/)) {
+    const [, word, n] = /^([\w-]+)=(\d+)$/.exec(pair) ?? []
+    if (word !== undefined && word !== 'wide' && !caps.has(word)) caps.set(word, Number(n))
+  }
+  if (!caps.has('quiet')) caps.set('quiet', quietCap)
+  return [...caps].sort((a, b) => a[1] - b[1])
+}
 const num = (v: unknown, d: number, floor = 1) => (typeof v === 'number' && Number.isFinite(v) && v >= floor ? v : d)
 // a missing or mistyped option falls back to its default, never to a crash
-export const configOf = (o: PluginOptions | undefined): Config => ({
-  paceFile: str(o?.paceFile, DEFAULTS.paceFile).trim() || DEFAULTS.paceFile,
+export const configOf = (o: PluginOptions | undefined): Config => {
   // a cap of zero is a real setting, every spawn refused under quiet
-  quietCap: Math.floor(num(o?.quietCap, DEFAULTS.quietCap, 0)),
-  seatAgent: str(o?.seatAgent, DEFAULTS.seatAgent).trim(),
-  seatModel: SEATS.includes(str(o?.seatModel, '') as never) ? (o?.seatModel as string) : DEFAULTS.seatModel,
-  agentsDir: str(o?.agentsDir, DEFAULTS.agentsDir).replace(/\/+$/, ''),
-  ladder: typeof o?.ladder === 'boolean' ? o.ladder : DEFAULTS.ladder,
-  briefScript: str(o?.briefScript, DEFAULTS.briefScript).trim(),
-  briefTimeoutMs: num(o?.briefTimeoutMs, DEFAULTS.briefTimeoutMs),
-  bundleDir: str(o?.bundleDir, DEFAULTS.bundleDir).replace(/\/+$/, ''),
-  bundlePrefix: str(o?.bundlePrefix, DEFAULTS.bundlePrefix).trim() || DEFAULTS.bundlePrefix,
-  briefPattern: str(o?.briefPattern, DEFAULTS.briefPattern).trim(),
-})
+  const quietCap = Math.floor(num(o?.quietCap, DEFAULTS.quietCap, 0))
+  return {
+    paceFile: str(o?.paceFile, DEFAULTS.paceFile).trim() || DEFAULTS.paceFile,
+    quietCap,
+    paces: pacesOf(str(o?.paces, ''), quietCap),
+    seatAgent: str(o?.seatAgent, DEFAULTS.seatAgent).trim(),
+    seatModel: SEATS.includes(str(o?.seatModel, '') as never) ? (o?.seatModel as string) : DEFAULTS.seatModel,
+    agentsDir: str(o?.agentsDir, DEFAULTS.agentsDir).replace(/\/+$/, ''),
+    ladder: typeof o?.ladder === 'boolean' ? o.ladder : DEFAULTS.ladder,
+    briefScript: str(o?.briefScript, DEFAULTS.briefScript).trim(),
+    briefTimeoutMs: num(o?.briefTimeoutMs, DEFAULTS.briefTimeoutMs),
+    bundleDir: str(o?.bundleDir, DEFAULTS.bundleDir).replace(/\/+$/, ''),
+    bundlePrefix: str(o?.bundlePrefix, DEFAULTS.bundlePrefix).trim() || DEFAULTS.bundlePrefix,
+    briefPattern: str(o?.briefPattern, DEFAULTS.briefPattern).trim(),
+  }
+}
 // set at register from the user options, then once more at the first event from the project block
 let C: Config = DEFAULTS
 
@@ -63,7 +81,8 @@ const blockIn = (settings: unknown): Record<string, unknown> => {
     Object.entries(options).filter(
       ([key, value]) =>
         Object.keys(DEFAULTS).includes(key) &&
-        typeof value === typeof DEFAULTS[key as keyof Config] &&
+        // paces is a string in settings and a parsed map in Config
+        typeof value === (key === 'paces' ? 'string' : typeof DEFAULTS[key as keyof Config]) &&
         (key !== 'seatModel' || SEATS.includes(value as never)),
     ),
   )
@@ -88,14 +107,27 @@ const seatRe = () => new RegExp(`\\b${esc(C.seatModel)}\\b`, 'i')
 // a relative path reads under the session root, an absolute one as given
 const under = (dir: string, path: string) => (path.startsWith('/') ? path : `${dir}/${path}`)
 
-const paceOf = (root: () => Promise<string>, read: (path: string) => Promise<string>) =>
+// the pace word and its cap, undefined for wide. a word the map does not name reads as the map's
+// smallest cap, under that cap's own word
+type Pace = { word: string; cap: number } | undefined
+const paceOf = (root: () => Promise<string>, read: (path: string) => Promise<string>): Promise<Pace> =>
   root()
     .then(dir => read(under(dir, C.paceFile)))
     .then(
-      word => (typeof word === 'string' && word.trim() === 'wide' ? 'wide' : 'quiet'),
+      text => {
+        const word = typeof text === 'string' ? text.trim() : ''
+        if (word === 'wide') return undefined
+        const [name, cap] = C.paces.find(([w]) => w === word) ?? C.paces[0]!
+        return { word: name, cap }
+      },
       // no pace file reads wide, so a fresh install caps nothing
-      () => 'wide',
+      () => undefined,
     )
+// the lift a refusal names: every word with a higher cap, then wide
+const liftOf = (pace: NonNullable<Pace>) => {
+  const words = [...C.paces.filter(([, cap]) => cap > pace.cap).map(([w]) => w), 'wide']
+  return words.length < 3 ? words.join(' or ') : `${words.slice(0, -1).join(', ')}, or ${words.at(-1)}`
+}
 
 const liveOf = async (list: () => Promise<AgentInfo[]>, except?: string) =>
   (await list()).filter(agent => agent.id !== except && LIVE.includes(agent.status))
@@ -499,27 +531,29 @@ export const register: Register = (on, options) => {
     } else mark('resume')
     // a fail-open rides every pace entry after it, so the next status write cannot erase it
     const say = (text: string) => $.ui.status([...notes, text].join('; '))
-    if ((await paceOf(() => $.session.root(), path => $.fs.read(path))) === 'wide') {
+    const pace = await paceOf(() => $.session.root(), path => $.fs.read(path))
+    if (pace === undefined) {
       mark('wide')
       say('pace wide')
       return next(e)
     }
     const live = await liveOf(() => $.agent.list(), resumed)
-    if (live.length < C.quietCap) {
+    // every capped word records as quiet, so the verdict keys stay the three they were
+    if (live.length < pace.cap) {
       mark('quiet')
-      say(`pace quiet, ${live.length + 1} of ${C.quietCap} lanes`)
+      say(`pace ${pace.word}, ${live.length + 1} of ${pace.cap} lanes`)
       return next(e)
     }
     mark('cap')
     // the engine's own status word rides each name, so a slot held by a lane that looked finished
     // carries what the engine reported for it
     const names = live.map(agent => `${agent.type} ${agent.id} "${agent.description}" is ${agent.status}`).join('; ')
-    say(`pace quiet, ${live.length} of ${C.quietCap} lanes, spawn refused`)
+    say(`pace ${pace.word}, ${live.length} of ${pace.cap} lanes, spawn refused`)
     return {
       deny:
-        `pace is quiet and ${live.length} lanes are live, the cap is ${C.quietCap}: ${names}. ` +
+        `pace is ${pace.word} and ${live.length} lanes are live, the cap is ${pace.cap}: ${names}. ` +
         'Wait for one to report or run the step inline' +
-        `; write wide to ${C.paceFile} to lift the cap.` +
+        `; write ${liftOf(pace)} to ${C.paceFile} to lift the cap.` +
         (resumed === undefined ? '' : ` This wakes ${resumed}, whose own slot is left out of the count.`),
     }
   }).catch(($, e, next) => next(e)) // a guard that throws fails open, the spawn goes on
@@ -528,12 +562,13 @@ export const register: Register = (on, options) => {
   // outlives the turn it belongs to: wide and an empty quiet clear it outright
   on('turn.complete', async ($, e, next) => {
     await configured(source => $.settings.read({ source }))
-    if ((await paceOf(() => $.session.root(), path => $.fs.read(path))) === 'wide') {
+    const pace = await paceOf(() => $.session.root(), path => $.fs.read(path))
+    if (pace === undefined) {
       $.ui.status(undefined)
       return next(e)
     }
     const live = await liveOf(() => $.agent.list(), e.agentId)
-    $.ui.status(live.length === 0 ? undefined : `pace quiet, ${live.length} of ${C.quietCap} lanes`)
+    $.ui.status(live.length === 0 ? undefined : `pace ${pace.word}, ${live.length} of ${pace.cap} lanes`)
     return next(e)
   }).catch(($, e, next) => next(e)) // a redraw that throws never holds the turn
 }

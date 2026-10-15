@@ -6,6 +6,11 @@
   the project's `.claude/settings.json` and `.claude/settings.local.json`, once per session, and
   lays it over your user options field by field, the local file over the project file. A field of
   the wrong type is ignored and your user value stands. A repo with no block sees no change.
+- New `paces` option: name your own pace words, each with its own cap, as `word=cap` pairs such as
+  `calm=1 busy=4`. Write any of them to the pace file. A word the list does not name gets its
+  smallest cap, `wide` stays uncapped, and `quiet` keeps `quietCap` unless you list it, so an empty
+  `paces` changes nothing. The status line and a cap refusal now name the word in force, and the
+  refusal offers each word with a higher cap, then `wide`, as the lift.
 - With `seatModel` set to `opus` or `sonnet`, a seat refusal inside a subagent no longer tells it to
   respawn on the model it was just refused for. It names only the models below both its parent and
   the seat.

@@ -1077,6 +1077,85 @@ test('option quietCap: zero is a cap of zero, every spawn refused under quiet', 
   expect((await $.agent.spawn(spawnArgs('review the diff'))).deny).toMatch(/0 lanes are live, the cap is 0/)
 })
 
+// the paces map: each word its own cap, wide never capped, quiet at quietCap unless a pair names it
+const TIERS = { paces: 'calm=1 quiet=2 busy=4' }
+
+option(
+  'paces',
+  TIERS,
+  async ($, on) => {
+    // no map, so busy is a word nothing names and reads quiet's cap
+    engine(on, 'busy', [lane('a', 'running'), lane('b', 'running')])
+    expect((await $.agent.spawn(spawnArgs('review the diff'))).deny).toMatch(/pace is quiet and 2 lanes are live, the cap is 2/)
+  },
+  async ($, on) => {
+    engine(on, 'busy', [lane('a', 'running'), lane('b', 'running')])
+    expect((await $.agent.spawn(spawnArgs('review the diff'))).agentId).toBe('new')
+  },
+)
+
+test('option paces: a two-tier map caps each word at its own number', { options: TIERS }, async ($, on) => {
+  const agents = [lane('a', 'running')]
+  const files: Record<string, string> = {}
+  engine(on, undefined, agents, [], files)
+  const at = async (word: string) => {
+    files['/repo/.claude/state/pace'] = `${word}\n`
+    return $.agent.spawn(spawnArgs('review the diff'))
+  }
+  expect((await at('calm')).deny).toMatch(/the cap is 1/)
+  expect((await at('quiet')).agentId).toBe('new')
+  agents.push(lane('b', 'running'), lane('c', 'running'))
+  expect((await at('quiet')).deny).toMatch(/the cap is 2/)
+  expect((await at('busy')).agentId).toBe('new')
+  agents.push(lane('d', 'running'))
+  expect((await at('busy')).deny).toMatch(/the cap is 4/)
+})
+
+test('option paces: a word the map does not name reads its smallest cap', { options: { paces: 'quiet=3 calm=1 busy=5' } }, async ($, on) => {
+  const status: Array<string | undefined> = []
+  engine(on, 'Wide', [lane('a', 'running')], status)
+  const deny = (await $.agent.spawn(spawnArgs('review the diff'))).deny ?? ''
+  expect(deny).toMatch(/^pace is calm and 1 lanes are live, the cap is 1/)
+  expect(status.at(-1)).toBe('pace calm, 1 of 1 lanes, spawn refused')
+})
+
+test(
+  'option paces: a wide pair is dropped and wide stays uncapped',
+  { options: { paces: 'wide=3 quiet=1 junk calm=x =2 big=2.5' } },
+  async ($, on) => {
+    const agents = [lane('a', 'running'), lane('b', 'running'), lane('c', 'running')]
+    const files: Record<string, string> = { '/repo/.claude/state/pace': 'wide' }
+    engine(on, undefined, agents, [], files)
+    expect((await $.agent.spawn(spawnArgs('review the diff'))).agentId).toBe('new')
+    // every pair but quiet=1 is malformed, so big reads the one cap left
+    files['/repo/.claude/state/pace'] = 'big'
+    expect((await $.agent.spawn(spawnArgs('review the diff'))).deny).toMatch(/^pace is quiet and 3 lanes are live, the cap is 1/)
+  },
+)
+
+test('option paces: empty keeps quietCap as the cap of quiet', { options: { paces: '', quietCap: 3 } }, async ($, on) => {
+  const status: Array<string | undefined> = []
+  engine(on, 'quiet', [lane('a', 'running'), lane('b', 'running')], status)
+  expect((await $.agent.spawn(spawnArgs('review the diff'))).agentId).toBe('new')
+  expect(status.at(-1)).toBe('pace quiet, 3 of 3 lanes')
+})
+
+test('option paces: a map that skips quiet leaves quiet at quietCap', { options: { paces: 'busy=6', quietCap: 1 } }, async ($, on) => {
+  engine(on, 'quiet', [lane('a', 'running')])
+  expect((await $.agent.spawn(spawnArgs('review the diff'))).deny).toMatch(/pace is quiet and 1 lanes are live, the cap is 1/)
+})
+
+test('option paces: the status and the refusal name the word, the lift a higher word or wide', { options: TIERS }, async ($, on) => {
+  const status: Array<string | undefined> = []
+  engine(on, 'calm', [lane('a', 'running')], status)
+  const deny = (await $.agent.spawn(spawnArgs('review the diff'))).deny ?? ''
+  expect(deny).toMatch(/^pace is calm and 1 lanes are live, the cap is 1:/)
+  expect(deny).toMatch(/run the step inline; write quiet, busy, or wide to \.claude\/state\/pace to lift the cap\.$/)
+  expect(status.at(-1)).toBe('pace calm, 1 of 1 lanes, spawn refused')
+  await $.turn.complete(mainTurn())
+  expect(status.at(-1)).toBe('pace calm, 1 of 1 lanes')
+})
+
 // a stranger's install: the shipped defaults, nothing on disk but what each case names
 test('defaults: a main-loop Explore spawn in a fable session starts, the seat rule off', async ($, on) => {
   engine(on, undefined, [])
