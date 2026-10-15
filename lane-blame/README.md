@@ -122,7 +122,7 @@ per-repo read above is what loads it here, with no user setting needed:
         "sourceRoot": "lane-pace/hooks lane-fence/hooks lane-blame/hooks",
         "testFolder": "tests",
         "testSuffixes": ".test.ts .test.tsx",
-        "runner": "claude plugin test",
+        "runner": "bash .claude/hooks/lib/suite-runner.sh",
         "logPath": ".claude/state/suite-shadow.log"
       }
     }
