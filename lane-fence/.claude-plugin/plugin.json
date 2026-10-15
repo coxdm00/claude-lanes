@@ -1,6 +1,6 @@
 {
   "name": "lane-fence",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Keeps a read-only subagent's Bash writes inside its record paths, judged where each write truly lands",
   "author": {
     "name": "Dave Cox"
