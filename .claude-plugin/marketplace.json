@@ -1,0 +1,26 @@
+{
+  "name": "claude-mods",
+  "owner": {
+    "name": "coxdm00"
+  },
+  "metadata": {
+    "description": "Three mods for a Claude Code session that hands work to subagents: a lane cap and model ladder, a write fence for read-only agents, and a test verdict that names its writer."
+  },
+  "plugins": [
+    {
+      "name": "pace",
+      "source": "./pace",
+      "description": "A live-lane cap, a model ladder, and a brief check on every subagent spawn"
+    },
+    {
+      "name": "fence",
+      "source": "./fence",
+      "description": "A read-only agent's Bash writes refused outside its own record paths"
+    },
+    {
+      "name": "suite",
+      "source": "./suite",
+      "description": "Who wrote the red: the test suite's verdict attributed to the agent that wrote the file"
+    }
+  ]
+}

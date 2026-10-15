@@ -1,0 +1,52 @@
+{
+  "name": "fence",
+  "version": "1.0.0",
+  "description": "Keeps a read-only subagent's Bash writes inside its record paths, judged where each write truly lands",
+  "author": { "name": "Dave Cox" },
+  "license": "MIT",
+  "keywords": ["subagent", "bash", "read-only", "reviewer", "guard"],
+  "userConfig": {
+    "agentTypes": {
+      "type": "string",
+      "title": "Fenced agent types",
+      "description": "Comma-separated subagent types whose Bash writes are fenced. Empty fences none. Every other agent, and the main loop, writes anywhere.",
+      "default": ""
+    },
+    "recordFolders": {
+      "type": "string",
+      "title": "Record folders",
+      "description": "Comma-separated folder patterns under the session root a fenced agent may write in. A * matches one or more characters inside one path segment.",
+      "default": ".claude/reviews/"
+    },
+    "memoryRoot": {
+      "type": "string",
+      "title": "Agent memory root",
+      "description": "Folder under the session root holding one memory folder per agent type; each fenced agent may write only its own. Empty turns this record path off.",
+      "default": ".claude/agent-memory"
+    },
+    "worktreesDir": {
+      "type": "string",
+      "title": "Worktrees folder",
+      "description": "Folder under the session root holding the repo's own worktrees; a record path inside one of them counts too. Empty anchors at the session root alone.",
+      "default": ".claude/worktrees"
+    },
+    "rootTmp": {
+      "type": "string",
+      "title": "Session tmp folder",
+      "description": "Scratch folder under the session root a fenced agent may write in. Empty turns it off.",
+      "default": "tmp"
+    },
+    "systemTmp": {
+      "type": "string",
+      "title": "System tmp folder",
+      "description": "Absolute scratch folder a fenced agent may write in. Empty turns it off.",
+      "default": "/tmp"
+    },
+    "statDeadlineMs": {
+      "type": "number",
+      "title": "Stat deadline in ms",
+      "description": "The longest the fence waits on the file system while placing one call's writes; a stat past it is refused and the write denied.",
+      "default": 2000
+    }
+  }
+}

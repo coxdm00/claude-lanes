@@ -1,0 +1,88 @@
+{
+  "name": "pace",
+  "version": "1.0.0",
+  "description": "Paces Claude Code subagents: a live-lane cap under a pace word, one judgment seat allowed the top model, a model ladder for nested spawns, and an optional brief-size check before a lane starts",
+  "author": {
+    "name": "Dave Cox"
+  },
+  "license": "MIT",
+  "keywords": [
+    "subagents",
+    "agents",
+    "models",
+    "hooks"
+  ],
+  "userConfig": {
+    "paceFile": {
+      "type": "string",
+      "title": "Pace file",
+      "description": "File holding the pace word, quiet or wide. Relative paths read under the session root. Missing reads wide, so nothing is capped until the file says quiet.",
+      "default": ".claude/state/pace"
+    },
+    "quietCap": {
+      "type": "number",
+      "title": "Quiet cap",
+      "description": "Live subagents allowed at once under pace quiet. Zero refuses every spawn under quiet.",
+      "default": 2
+    },
+    "seatAgent": {
+      "type": "string",
+      "title": "Judgment seat agent",
+      "description": "The one subagent type allowed to run on the seat model. Empty turns the seat rule off.",
+      "default": ""
+    },
+    "seatModel": {
+      "type": "string",
+      "title": "Judgment seat model",
+      "description": "The model family refused to every subagent but the judgment seat.",
+      "options": [
+        "sonnet",
+        "opus",
+        "fable"
+      ],
+      "default": "fable"
+    },
+    "agentsDir": {
+      "type": "string",
+      "title": "Agents folder",
+      "description": "Folder of project agent files whose model: pin the mod reads. ~/.claude/agents is read after it.",
+      "default": ".claude/agents"
+    },
+    "ladder": {
+      "type": "boolean",
+      "title": "Model ladder",
+      "description": "Opt-in. Refuse a nested spawn unless it runs one tier below its parent, Haiku to Haiku allowed.",
+      "default": false
+    },
+    "briefScript": {
+      "type": "string",
+      "title": "Brief-size script",
+      "description": "Bash script run on each lane brief a spawn prompt names. Exit 1 refuses, exit 2 refuses as unparsed. Empty turns the check off.",
+      "default": ""
+    },
+    "briefTimeoutMs": {
+      "type": "number",
+      "title": "Brief-size timeout",
+      "description": "Milliseconds the brief-size script may run before the check fails open.",
+      "default": 10000
+    },
+    "bundleDir": {
+      "type": "string",
+      "title": "Bundle folder",
+      "description": "Folder holding the numbered bundle folders that lane briefs sit in.",
+      "default": ".claude/features"
+    },
+    "bundlePrefix": {
+      "type": "string",
+      "title": "Bundle prefix",
+      "description": "Prefix of a bundle folder, as in CC-148. Matched in any case, spelled this way on disk.",
+      "default": "CC"
+    },
+    "briefPattern": {
+      "type": "string",
+      "title": "Brief pattern",
+      "description": "A regular expression that replaces the brief path pattern built from the bundle prefix. Empty keeps the built one.",
+      "default": ""
+    }
+  }
+}

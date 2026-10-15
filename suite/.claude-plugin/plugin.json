@@ -1,0 +1,64 @@
+{
+  "name": "suite",
+  "version": "1.0.0",
+  "description": "Records which agent wrote each source file across worktrees, runs the tests beside those writes at every Stop and SubagentStop, and logs who owns each red beside the shell gate's answer, never blocking",
+  "author": { "name": "Dave Cox" },
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "sourceRoot": {
+      "type": "string",
+      "title": "Source root",
+      "description": "The folder, relative to each tree's root, whose writes are recorded and whose tests run. Empty records writes anywhere in the tree.",
+      "default": "src"
+    },
+    "testSuffixes": {
+      "type": "string",
+      "title": "Test file suffixes",
+      "description": "Space-separated suffixes that mark a test file. A source file's sibling test swaps its extension for the matching suffix, and only files with those extensions are recorded.",
+      "default": ".test.ts .test.tsx"
+    },
+    "runner": {
+      "type": "string",
+      "title": "Test runner command",
+      "description": "Space-separated command run from the stopping tree's root, the test files appended. Run direct, never through a package manager.",
+      "default": "./node_modules/.bin/vitest run"
+    },
+    "logPath": {
+      "type": "string",
+      "title": "Log path",
+      "description": "Where the one line per stop is appended. An absolute path lands as written, a relative one joins the main tree's root.",
+      "default": "/tmp/suite-shadow.log"
+    },
+    "worktreeDir": {
+      "type": "string",
+      "title": "Worktree folder",
+      "description": "The folder, relative to the main tree's root, that holds one subfolder per worktree lane.",
+      "default": ".claude/worktrees"
+    },
+    "runTimeoutSeconds": {
+      "type": "number",
+      "title": "Run ceiling in seconds",
+      "description": "How long a stop waits on the scoped run before logging timeout.",
+      "default": 60
+    },
+    "sentinelPrefix": {
+      "type": "string",
+      "title": "Declared-red sentinel prefix",
+      "description": "Path prefix of the declared-red sentinel, completed by the first 16 hex characters of the SHA-256 of the stopping tree's path. Empty reads no sentinel.",
+      "default": ""
+    },
+    "sentinelTtlSeconds": {
+      "type": "number",
+      "title": "Sentinel lifetime in seconds",
+      "description": "A sentinel whose epoch first line is this old or older declares nothing.",
+      "default": 1800
+    },
+    "gatePhrase": {
+      "type": "string",
+      "title": "Shell gate phrase",
+      "description": "The phrase a shell test gate prints when the suite is red, which makes the shell column read suite. Empty reads any block as gate.",
+      "default": ""
+    }
+  }
+}
