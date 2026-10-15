@@ -45,8 +45,40 @@ export const configOf = (o: PluginOptions | undefined): Config => ({
   bundlePrefix: str(o?.bundlePrefix, DEFAULTS.bundlePrefix).trim() || DEFAULTS.bundlePrefix,
   briefPattern: str(o?.briefPattern, DEFAULTS.briefPattern).trim(),
 })
-// set at register, so a reload with new options reads them whole
+// set at register from the user options, then once more at the first event from the project block
 let C: Config = DEFAULTS
+
+// the engine keeps pluginConfigs to user scope, so the project and local files are read here
+type SettingsRead = (source: 'project' | 'local') => Promise<Readonly<Record<string, unknown>>>
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+// this mod's options in one source: the first pluginConfigs key whose name before the @ is
+// lane-pace, each field kept only on the manifest's type and options, as the engine would
+const blockIn = (settings: unknown): Record<string, unknown> => {
+  const configs = isObject(settings) ? settings.pluginConfigs : undefined
+  if (!isObject(configs)) return {}
+  const entry = Object.entries(configs).find(([key]) => key.split('@')[0] === 'lane-pace')?.[1]
+  const options = isObject(entry) ? entry.options : undefined
+  if (!isObject(options)) return {}
+  return Object.fromEntries(
+    Object.entries(options).filter(
+      ([key, value]) =>
+        Object.keys(DEFAULTS).includes(key) &&
+        typeof value === typeof DEFAULTS[key as keyof Config] &&
+        (key !== 'seatModel' || SEATS.includes(value as never)),
+    ),
+  )
+}
+// the options register was handed, and the one read of the block over them per session
+let given: PluginOptions | undefined
+let merged: Promise<void> | undefined
+// local over project over user, field by field. a read that rejects is no override, so the
+// user options stand and the hook goes on
+const configured = (read: SettingsRead) =>
+  (merged ??= (async () => {
+    const project = blockIn(await read('project'))
+    const local = blockIn(await read('local'))
+    C = configOf({ ...given, ...project, ...local } as PluginOptions)
+  })().catch(() => undefined))
 // a lane costs the machine while pending, mid-turn, or held on its own background work
 const LIVE: ReadonlyArray<AgentInfo['status']> = ['pending', 'running', 'waiting']
 const esc = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -361,8 +393,11 @@ export const record = (store: Store, session: () => Promise<string>, now: () => 
 }
 
 export const register: Register = (on, options) => {
+  given = options
+  merged = undefined
   C = configOf(options)
   on('agent.spawn', async ($, e, next) => {
+    await configured(source => $.settings.read({ source }))
     const store: Store = { get: k => $.store.get(k), set: (k, v) => $.store.set(k, v) }
     const mark = (v: Verdict) => void record(store, () => $.session.id(), () => $.clock.now(), v)
     // every fail-open reason, ladder then brief, prefixed to each pace entry after it
@@ -490,6 +525,7 @@ export const register: Register = (on, options) => {
   // every turn end redraws the entry from the live count, so a refusal pinned mid-turn never
   // outlives the turn it belongs to: wide and an empty quiet clear it outright
   on('turn.complete', async ($, e, next) => {
+    await configured(source => $.settings.read({ source }))
     if ((await paceOf(() => $.session.root(), path => $.fs.read(path))) === 'wide') {
       $.ui.status(undefined)
       return next(e)

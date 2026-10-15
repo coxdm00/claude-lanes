@@ -1286,3 +1286,92 @@ option(
   },
   { briefScript: HARNESS.briefScript },
 )
+
+// the project and local settings files as the engine loads them, each answered by its source, and
+// every source asked for in order, so a case can count the reads
+const settings = (on: On, project: Record<string, unknown>, local: Record<string, unknown> = {}) => {
+  const reads: string[] = []
+  on('settings.read', (_, e) => {
+    reads.push(String(e.source))
+    return { value: e.source === 'project' ? project : e.source === 'local' ? local : {} }
+  })
+  return reads
+}
+const blockOf = (entries: Record<string, Record<string, unknown>>) => ({
+  pluginConfigs: Object.fromEntries(Object.entries(entries).map(([key, options]) => [key, { options }])),
+})
+
+test(
+  'a project block field wins over the user value, local over project',
+  { options: { ...HARNESS, quietCap: 1, seatAgent: 'architect' } },
+  async ($, on) => {
+    const status: Array<string | undefined> = []
+    const agents = [lane('a', 'running')]
+    engine(on, 'quiet', agents, status)
+    const reads = settings(
+      on,
+      // a lookalike name is no match, and the first lane-pace entry in file order is the one taken
+      blockOf({
+        'lane-pacer@claude-lanes': { quietCap: 9 },
+        'lane-pace@claude-lanes': { quietCap: 3, seatAgent: 'design-critic' },
+        'lane-pace@elsewhere': { seatAgent: 'other' },
+      }),
+      blockOf({ 'lane-pace@inline': { quietCap: 2 } }),
+    )
+    // a turn end that comes first still meets the merged block
+    await $.turn.complete(mainTurn())
+    expect(status.at(-1)).toBe('pace quiet, 1 of 2 lanes')
+    expect((await $.agent.spawn(spawnArgs('review the diff'))).agentId).toBe('new')
+    agents.push(lane('b', 'running'))
+    expect((await $.agent.spawn(spawnArgs('review the diff'))).deny).toMatch(/the cap is 2/)
+    expect((await $.agent.spawn(spawnArgs('judge', 'fable', 'architect'))).deny).toMatch(/design-critic is the only one/)
+    // read once for the session, the project file then the local one
+    expect(reads).toEqual(['project', 'local'])
+  },
+)
+
+test(
+  'a wrong-typed project field is ignored and the user value stands',
+  { options: { ...HARNESS, quietCap: 3, seatModel: 'opus' } },
+  async ($, on) => {
+    const status: Array<string | undefined> = []
+    engine(on, 'quiet', [lane('a', 'running'), lane('b', 'running')], status, AGENT_FILES)
+    settings(
+      on,
+      blockOf({
+        'lane-pace@claude-lanes': { quietCap: '1', ladder: 'false', seatModel: 'haiku', seatAgent: 'architect' },
+      }),
+    )
+    // the string cap and the string ladder are dropped, the right-typed seat agent beside them wins.
+    // sonnet, since a bare built-in under this opus parent would meet the opus seat first
+    expect((await $.agent.spawn(spawnArgs('review the diff', 'sonnet'))).agentId).toBe('new')
+    expect(status.at(-1)).toBe('pace quiet, 3 of 3 lanes')
+    expect((await $.agent.spawn(nested('sonnet', 'sonnet'))).deny).toMatch(/^The model ladder/)
+    // a seat model outside the manifest's options counts as unset, so the user's opus stands
+    expect((await $.agent.spawn(spawnArgs('review the diff', 'opus'))).deny).toMatch(
+      /^An Opus pin is for a judgment seat, and architect is the only one\./,
+    )
+  },
+)
+
+test('no project block changes nothing', { options: { ...HARNESS, quietCap: 4 } }, async ($, on) => {
+  const status: Array<string | undefined> = []
+  engine(on, 'quiet', [lane('a', 'running'), lane('b', 'running'), lane('c', 'running')], status)
+  // another mod's block, a first lane-pace entry that is no object, and a block with no options
+  settings(on, { pluginConfigs: { 'lane-fence@claude-lanes': { options: { quietCap: 1 } }, 'lane-pace@x': 'quiet' } }, {
+    pluginConfigs: { 'lane-pace@claude-lanes': {} },
+  })
+  expect((await $.agent.spawn(spawnArgs('review the diff'))).agentId).toBe('new')
+  expect(status.at(-1)).toBe('pace quiet, 4 of 4 lanes')
+  expect((await $.agent.spawn(spawnArgs('review the diff', 'fable'))).deny).toMatch(/design-critic is the only one/)
+})
+
+test('a settings read that rejects leaves the user options standing', { options: { ...HARNESS, quietCap: 4 } }, async ($, on) => {
+  const status: Array<string | undefined> = []
+  engine(on, 'quiet', [lane('a', 'running'), lane('b', 'running'), lane('c', 'running')], status)
+  on('settings.read', () => ({ deny: 'settings unavailable' }))
+  expect((await $.agent.spawn(spawnArgs('review the diff'))).agentId).toBe('new')
+  expect(status.at(-1)).toBe('pace quiet, 4 of 4 lanes')
+  await $.turn.complete(mainTurn())
+  expect(status.at(-1)).toBe('pace quiet, 3 of 4 lanes')
+})
