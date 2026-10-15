@@ -1,5 +1,5 @@
 {
-  "name": "claude-mods",
+  "name": "claude-lanes",
   "owner": {
     "name": "coxdm00"
   },
@@ -8,19 +8,19 @@
   },
   "plugins": [
     {
-      "name": "pace",
-      "source": "./pace",
+      "name": "lane-pace",
+      "source": "./lane-pace",
       "description": "A live-lane cap, a model ladder, and a brief check on every subagent spawn"
     },
     {
-      "name": "fence",
-      "source": "./fence",
+      "name": "lane-fence",
+      "source": "./lane-fence",
       "description": "A read-only agent's Bash writes refused outside its own record paths"
     },
     {
-      "name": "suite",
-      "source": "./suite",
-      "description": "Who wrote the red: the test suite's verdict attributed to the agent that wrote the file"
+      "name": "lane-blame",
+      "source": "./lane-blame",
+      "description": "Who wrote the red: the test verdict attributed to the agent that wrote the file"
     }
   ]
 }

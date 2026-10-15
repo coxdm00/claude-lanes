@@ -1,4 +1,4 @@
-# fence
+# lane-fence
 
 A Claude Code mod that keeps a read-only subagent read-only when it runs Bash. You name the agent
 types that should never change your code, such as a code reviewer or a security auditor, and the
@@ -55,13 +55,13 @@ Edit, and NotebookEdit to the same agent types.
 At the prompt of a terminal session:
 
 ```
-/plugin install fence --marketplace <owner>/<repo>
+/plugin install lane-fence --marketplace coxdm00/claude-lanes
 ```
 
 From a shell:
 
 ```
-claude plugin install fence --marketplace <owner>/<repo>
+claude plugin install lane-fence --marketplace coxdm00/claude-lanes
 ```
 
 Answer `y` to add the marketplace, then pick a scope. The options screen comes next. To try it

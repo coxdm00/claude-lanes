@@ -342,7 +342,7 @@ type Verdict =
   | 'wide'
   | 'quiet'
 type Store = { get: (key: string) => Promise<unknown>; set: (key: string, value: unknown) => Promise<void> }
-const verdictKey = (v: Verdict) => `pace.verdict.${v}`
+const verdictKey = (v: Verdict) => `lane-pace.verdict.${v}`
 const countOf = (v: unknown) =>
   typeof v === 'object' && v !== null && typeof (v as { count?: unknown }).count === 'number'
     ? (v as { count: number }).count

@@ -426,9 +426,9 @@ async function rewriteLog(io: Io, line: string) {
   await io.write(path, `${before}${line}\n`)
 }
 
-const WRITES = { plugin: 'suite', key: 'writes' } as const
-const SEQ = { plugin: 'suite', key: 'seq' } as const
-const LAST = { plugin: 'suite', key: 'last' } as const
+const WRITES = { plugin: 'lane-blame', key: 'writes' } as const
+const SEQ = { plugin: 'lane-blame', key: 'seq' } as const
+const LAST = { plugin: 'lane-blame', key: 'last' } as const
 
 // the engine's side of the io, built per stop. the engine only follows $ into a top-level function
 async function ioOf($: EngineInterface, cfg: Cfg, base: string): Promise<Io> {
@@ -442,9 +442,9 @@ async function ioOf($: EngineInterface, cfg: Cfg, base: string): Promise<Io> {
     read: path => $.fs.read(path),
     write: (path, text) => $.fs.write(path, text),
     seq: async () => (await $.state.get(SEQ)).value ?? 0,
-    memo: async tree => (await $.state.get({ plugin: 'suite', key: 'memo', id: `memo:${tree}` })).value,
+    memo: async tree => (await $.state.get({ plugin: 'lane-blame', key: 'memo', id: `memo:${tree}` })).value,
     setMemo: async (tree, held) => {
-      await $.state.set({ plugin: 'suite', key: 'memo', id: `memo:${tree}` }, held)
+      await $.state.set({ plugin: 'lane-blame', key: 'memo', id: `memo:${tree}` }, held)
     },
     drop: async paths => {
       await update($, WRITES, w => Object.fromEntries(Object.entries(w ?? {}).filter(([p]) => !paths.includes(p))))
@@ -490,7 +490,7 @@ export const register: Register = (on, options) => {
     // tool.call carries no cwd, and a lane's shell runs in its own tree: its relative targets
     // wait under its id for the SubagentStop that names that cwd, never keyed to the main tree
     if (e.tool === 'Bash' && e.agentId !== undefined && relative.length > 0) {
-      await update($, { plugin: 'suite', key: 'held', id: e.agentId }, h => [...new Set([...(h ?? []), ...relative])])
+      await update($, { plugin: 'lane-blame', key: 'held', id: e.agentId }, h => [...new Set([...(h ?? []), ...relative])])
       await record($, cfg, base, raw.filter(p => p.startsWith('/')), who)
       return result
     }
@@ -520,9 +520,9 @@ export const register: Register = (on, options) => {
       const base = mainOf(cfg, await $.session.root())
       // the lane's own cwd; absent, the main tree
       const cwd = typeof e.cwd === 'string' ? e.cwd : base
-      const { value: pending = [] } = await $.state.get({ plugin: 'suite', key: 'held', id: e.agent_id })
+      const { value: pending = [] } = await $.state.get({ plugin: 'lane-blame', key: 'held', id: e.agent_id })
       if (pending.length > 0) {
-        await $.state.set({ plugin: 'suite', key: 'held', id: e.agent_id }, [])
+        await $.state.set({ plugin: 'lane-blame', key: 'held', id: e.agent_id }, [])
         await record($, cfg, base, pending.map(p => resolve(cwd, p)), e.agent_id)
       }
       if (e.stop_hook_active) return shell

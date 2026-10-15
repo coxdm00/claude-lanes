@@ -1,8 +1,10 @@
 {
-  "name": "suite",
+  "name": "lane-blame",
   "version": "1.0.0",
   "description": "Records which agent wrote each source file across worktrees, runs the tests beside those writes at every Stop and SubagentStop, and logs who owns each red beside the shell gate's answer, never blocking",
-  "author": { "name": "Dave Cox" },
+  "author": {
+    "name": "Dave Cox"
+  },
   "license": "MIT",
   "types": "./types/index.d.ts",
   "userConfig": {

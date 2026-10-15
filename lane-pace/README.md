@@ -1,4 +1,4 @@
-# pace
+# lane-pace
 
 A Claude Code mod that keeps subagents from running away with your machine and your model budget.
 It sits on the engine's `agent.spawn` event and judges every subagent before it starts.
@@ -20,7 +20,7 @@ It sits on the engine's `agent.spawn` event and judges every subagent before it 
   the check is off.
 - **Resume is a wake.** A SendMessage that wakes a finished subagent skips the model and brief
   checks, since a resume cannot change them, and meets only the lane cap, its own slot left out.
-- **A verdict record.** Every judged spawn bumps one store key, `pace.verdict.<kind>`, holding the
+- **A verdict record.** Every judged spawn bumps one store key, `lane-pace.verdict.<kind>`, holding the
   session id, the time, and a running count, so you can tell the mod has acted.
 - **A status entry.** The status line shows the lane count, `pace quiet, 1 of 2 lanes`, redrawn at
   every turn end so a refusal never outlives its turn.
@@ -32,22 +32,22 @@ Anything the mod cannot judge, it lets through: every hook fails open.
 At the prompt of a Claude Code session:
 
 ```
-/plugin install pace --marketplace <owner>/<repo>
+/plugin install lane-pace --marketplace coxdm00/claude-lanes
 ```
 
 From a shell:
 
 ```sh
-claude plugin install pace --marketplace <owner>/<repo>
+claude plugin install lane-pace --marketplace coxdm00/claude-lanes
 ```
 
-Replace `<owner>/<repo>` with the GitHub repository that holds this folder. To install from a local
+Replace `coxdm00/claude-lanes` with the GitHub repository that holds this folder. To install from a local
 checkout instead, add the repository root, the folder above `pace/` that holds the marketplace
 file, then install from the marketplace it names:
 
 ```sh
 claude plugin marketplace add /path/to/repo
-claude plugin install pace@<marketplace>
+claude plugin install lane-lane-pace@claude-lanes
 ```
 
 Replace `<marketplace>` with the `name` in the root `.claude-plugin/marketplace.json`.
@@ -140,7 +140,7 @@ env reads: CLAUDE_CODE_SUBAGENT_MODEL, CLAUDE_CODE_SUBAGENT_MODEL_FORCE, HOME
 
 1. It reads the pace file, agent files under `agentsDir` and `~/.claude/agents`, three environment variables, and the
    engine's list of running subagents.
-2. It writes only its own store keys, `pace.verdict.<kind>`, and its status line entry.
+2. It writes only its own store keys, `lane-pace.verdict.<kind>`, and its status line entry.
 3. It refuses subagent spawns and nothing else: no tool call, prompt, or file edit is touched.
 4. It runs one process, `bash <briefScript> <brief>`, only when a prompt names a brief and the
    option is set, with a timeout.

@@ -1,4 +1,4 @@
-# suite
+# lane-blame
 
 A Claude Code mod that remembers which agent wrote each source file and, every time the main loop
 or a subagent stops, runs only the tests beside those writes. When a test is red, the log and the
@@ -25,9 +25,9 @@ actually gave, so you can see where they disagree before you trust either one.
 1. **The write record.** After an Edit, Write, MultiEdit, or NotebookEdit call succeeds, and after
    a Bash call that writes through a redirect, `tee`, `touch`, `rm`, `sed -i`, `perl -i`, `cp`, `mv`,
    or `install`, every written path under the source root with a test extension is stored in
-   `$.state` under `suite.writes` against its writer. A denied call records nothing.
+   `$.state` under `lane-blame.writes` against its writer. A denied call records nothing.
 2. **The trees.** A write under the worktree folder records against that worktree, so two trees
-   never share a key. A subagent's relative Bash targets wait in `suite.held` until its
+   never share a key. A subagent's relative Bash targets wait in `lane-blame.held` until its
    `SubagentStop` names the working directory they resolve against.
 3. **The scoped run.** At `Stop` and `SubagentStop`, after the shell hooks answer, the mod runs the
    configured runner from the stopping tree's root over the test files beside the recorded writes.
@@ -56,11 +56,11 @@ with its first five words otherwise.
 ## Install
 
 ```
-claude plugin marketplace add <owner>/<repo>
-claude plugin install suite@claude-mods --scope project
+claude plugin marketplace add coxdm00/claude-lanes
+claude plugin install lane-blame@claude-lanes --scope project
 ```
 
-At a terminal session's prompt, `/plugin install suite --marketplace <owner>/<repo>` does the
+At a terminal session's prompt, `/plugin install lane-blame --marketplace coxdm00/claude-lanes` does the
 same. Every option has a default, so a repo with vitest tests under `src/` needs no setup.
 
 ## Options

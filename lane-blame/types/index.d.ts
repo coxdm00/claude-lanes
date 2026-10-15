@@ -11,6 +11,6 @@ declare module 'claude-code' {
   interface PluginState {
     // memo holds one Memo per tree under id memo:<tree>, the main tree's id memo:. held keeps a
     // lane's relative Bash targets by agent id until its stop names the cwd they resolve against
-    suite: { writes: Writes; seq: number; memo: StateFamily<Memo>; held: StateFamily<string[]>; last: Last }
+    'lane-blame': { writes: Writes; seq: number; memo: StateFamily<Memo>; held: StateFamily<string[]>; last: Last }
   }
 }

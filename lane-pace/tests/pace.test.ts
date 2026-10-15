@@ -196,10 +196,10 @@ harness('a cap refusal and a fable refusal each write their own store key with s
   await $.agent.spawn(spawnArgs('review the diff'))
   await $.agent.spawn(spawnArgs('review the diff', 'fable'))
   await clock.advance(0)
-  expect(store.get('pace.verdict.cap')).toEqual({ session: 's1', at: 1_000, count: 2 })
-  expect(store.get('pace.verdict.fable')).toEqual({ session: 's1', at: 1_000, count: 1 })
-  expect(store.get('pace.verdict.quiet')).toBe(undefined)
-  expect(store.get('pace.verdict.wide')).toBe(undefined)
+  expect(store.get('lane-pace.verdict.cap')).toEqual({ session: 's1', at: 1_000, count: 2 })
+  expect(store.get('lane-pace.verdict.fable')).toEqual({ session: 's1', at: 1_000, count: 1 })
+  expect(store.get('lane-pace.verdict.quiet')).toBe(undefined)
+  expect(store.get('lane-pace.verdict.wide')).toBe(undefined)
 })
 
 harness('a bare built-in under a fable parent writes the fable key, the critic on fable writes none', async ($, on) => {
@@ -207,11 +207,11 @@ harness('a bare built-in under a fable parent writes the fable key, the critic o
   const clock = engine(on, 'wide', [], [], {}, store)
   await $.agent.spawn(spawnArgs('review the diff', undefined, 'general-purpose', 'fable'))
   await clock.advance(0)
-  expect(store.get('pace.verdict.fable')).toEqual({ session: 's1', at: 1_000, count: 1 })
+  expect(store.get('lane-pace.verdict.fable')).toEqual({ session: 's1', at: 1_000, count: 1 })
   await $.agent.spawn(spawnArgs('critique the shots', 'fable', 'design-critic'))
   await clock.advance(0)
-  expect(store.get('pace.verdict.fable')).toEqual({ session: 's1', at: 1_000, count: 1 })
-  expect(store.get('pace.verdict.wide')).toEqual({ session: 's1', at: 1_000, count: 1 })
+  expect(store.get('lane-pace.verdict.fable')).toEqual({ session: 's1', at: 1_000, count: 1 })
+  expect(store.get('lane-pace.verdict.wide')).toEqual({ session: 's1', at: 1_000, count: 1 })
 })
 
 harness('a pass under quiet writes its key', async ($, on) => {
@@ -219,7 +219,7 @@ harness('a pass under quiet writes its key', async ($, on) => {
   const clock = engine(on, 'quiet', [], [], {}, store)
   await $.agent.spawn(spawnArgs('review the diff'))
   await clock.advance(0)
-  expect(store.get('pace.verdict.quiet')).toEqual({ session: 's1', at: 1_000, count: 1 })
+  expect(store.get('lane-pace.verdict.quiet')).toEqual({ session: 's1', at: 1_000, count: 1 })
 })
 
 harness('a pass under wide writes its key', async ($, on) => {
@@ -227,7 +227,7 @@ harness('a pass under wide writes its key', async ($, on) => {
   const clock = engine(on, 'wide', [], [], {}, store)
   await $.agent.spawn(spawnArgs('review the diff'))
   await clock.advance(0)
-  expect(store.get('pace.verdict.wide')).toEqual({ session: 's1', at: 1_000, count: 1 })
+  expect(store.get('lane-pace.verdict.wide')).toEqual({ session: 's1', at: 1_000, count: 1 })
 })
 
 harness('a store that fails costs the record, never the verdict', async ($, on) => {
@@ -309,12 +309,12 @@ harness("a brief over its caps is denied with the script output, and the deny is
   ]);
   expect(status.at(-1)).toBe("brief over its caps, spawn refused");
   await clock.advance(0);
-  expect(store.get("pace.verdict.brief")).toEqual({
+  expect(store.get("lane-pace.verdict.brief")).toEqual({
     session: "s1",
     at: 1_000,
     count: 1,
   });
-  expect(store.get("pace.verdict.wide")).toBe(undefined);
+  expect(store.get("lane-pace.verdict.wide")).toBe(undefined);
 });
 
 harness("a brief the script cannot parse, exit 2, is refused with the parse line and a brief-open key", async ($, on) => {
@@ -331,13 +331,13 @@ harness("a brief the script cannot parse, exit 2, is refused with the parse line
     "brief the size check could not parse, spawn refused",
   );
   await clock.advance(0);
-  expect(store.get("pace.verdict.brief-open")).toEqual({
+  expect(store.get("lane-pace.verdict.brief-open")).toEqual({
     session: "s1",
     at: 1_000,
     count: 1,
   });
-  expect(store.get("pace.verdict.brief")).toBe(undefined);
-  expect(store.get("pace.verdict.brief-unchecked")).toBe(undefined);
+  expect(store.get("lane-pace.verdict.brief")).toBe(undefined);
+  expect(store.get("lane-pace.verdict.brief-unchecked")).toBe(undefined);
 });
 
 harness("a brief under its caps passes to the pace check", async ($, on) => {
@@ -380,17 +380,17 @@ harness("a script that cannot start or times out fails open with a status line a
     /could not run on .claude\/features\/CC-999\/brief-B.md, spawn allowed; pace wide/,
   );
   await clock.advance(0);
-  expect(store.get("pace.verdict.brief-unchecked")).toEqual({
+  expect(store.get("lane-pace.verdict.brief-unchecked")).toEqual({
     session: "s1",
     at: 1_000,
     count: 2,
   });
-  expect(store.get("pace.verdict.wide")).toEqual({
+  expect(store.get("lane-pace.verdict.wide")).toEqual({
     session: "s1",
     at: 1_000,
     count: 2,
   });
-  expect(store.get("pace.verdict.brief-open")).toBe(undefined);
+  expect(store.get("lane-pace.verdict.brief-open")).toBe(undefined);
 });
 
 harness("an exit past 2 is the environment and fails open with a brief-unchecked key", async ($, on) => {
@@ -403,7 +403,7 @@ harness("an exit past 2 is the environment and fails open with a brief-unchecked
     /could not read .*brief-A.md, exit 127, spawn allowed; pace wide/,
   );
   await clock.advance(0);
-  expect(store.get("pace.verdict.brief-unchecked")).toEqual({
+  expect(store.get("lane-pace.verdict.brief-unchecked")).toEqual({
     session: "s1",
     at: 1_000,
     count: 1,
@@ -438,12 +438,12 @@ harness("an exit 1 with empty stdout is a crash that fails open with a brief-unc
   );
   expect(status.join("\n")).not.toMatch(/past the brief-size caps/);
   await clock.advance(0);
-  expect(store.get("pace.verdict.brief-unchecked")).toEqual({
+  expect(store.get("lane-pace.verdict.brief-unchecked")).toEqual({
     session: "s1",
     at: 1_000,
     count: 2,
   });
-  expect(store.get("pace.verdict.brief")).toBe(undefined);
+  expect(store.get("lane-pace.verdict.brief")).toBe(undefined);
 });
 
 harness("an exit 2 with no output still refuses and names the exit", async ($, on) => {
@@ -485,12 +485,12 @@ harness("an over-cap brief and an unparsed one beside it deny with both lines un
   expect(spawned.deny).toContain(BREACH);
   expect(spawned.deny).toContain(PARSE);
   await clock.advance(0);
-  expect(store.get("pace.verdict.brief")).toEqual({
+  expect(store.get("lane-pace.verdict.brief")).toEqual({
     session: "s1",
     at: 1_000,
     count: 1,
   });
-  expect(store.get("pace.verdict.brief-open")).toBe(undefined);
+  expect(store.get("lane-pace.verdict.brief-open")).toBe(undefined);
 });
 
 harness("a brief the prompt names but the disk lacks is never run and fails open", async ($, on) => {
@@ -558,7 +558,7 @@ harness("a session root that rejects fails the brief check open with a brief-unc
     "brief-size check found no session root to run from, spawn allowed; pace wide",
   );
   await clock.advance(0);
-  expect(store.get("pace.verdict.brief-unchecked")).toEqual({
+  expect(store.get("lane-pace.verdict.brief-unchecked")).toEqual({
     session: "s1",
     at: 1_000,
     count: 1,
@@ -683,8 +683,8 @@ harness('an opus parent refused on a pin names both tiers, the pin, and the two 
   )
   expect(status.at(-1)).toBe('model ladder, spawn refused')
   await clock.advance(0)
-  expect(store.get('pace.verdict.ladder')).toEqual({ session: 's1', at: 1_000, count: 1 })
-  expect(store.get('pace.verdict.wide')).toBe(undefined)
+  expect(store.get('lane-pace.verdict.ladder')).toEqual({ session: 's1', at: 1_000, count: 1 })
+  expect(store.get('lane-pace.verdict.wide')).toBe(undefined)
 })
 
 harness('an opus parent refused on inherit and on an agent file each name where the tier came from', async ($, on) => {
@@ -897,7 +897,7 @@ harness('a fork inside a lane cannot step down and is refused with that said, a 
   )
   expect((await $.agent.spawn(nested('haiku', undefined, 'fork', { fork: true }))).agentId).toBe('new')
   await clock.advance(0)
-  expect(store.get('pace.verdict.ladder')).toEqual({ session: 's1', at: 1_000, count: 1 })
+  expect(store.get('lane-pace.verdict.ladder')).toEqual({ session: 's1', at: 1_000, count: 1 })
 })
 
 harness('a plugin agent inside a lane fails the ladder open with a status note', async ($, on) => {
@@ -912,8 +912,8 @@ harness('a plugin agent inside a lane fails the ladder open with a status note',
     'model ladder unchecked, acme:helper is a plugin agent whose model this cannot read, spawn allowed; pace wide',
   )
   await clock.advance(0)
-  expect(store.get('pace.verdict.ladder')).toBe(undefined)
-  expect(store.get('pace.verdict.wide')).toEqual({ session: 's1', at: 1_000, count: 1 })
+  expect(store.get('lane-pace.verdict.ladder')).toBe(undefined)
+  expect(store.get('lane-pace.verdict.wide')).toEqual({ session: 's1', at: 1_000, count: 1 })
 })
 
 harness('a model or parent naming no known tier fails the ladder open with a status note', async ($, on) => {
@@ -937,7 +937,7 @@ harness('a main-session spawn carries no parentAgentId and the ladder never judg
   expect((await $.agent.spawn(spawnArgs('review the diff', undefined, 'code-reviewer'))).agentId).toBe('new')
   expect(status.at(-1)).toBe('pace wide')
   await clock.advance(0)
-  expect(store.get('pace.verdict.ladder')).toBe(undefined)
+  expect(store.get('lane-pace.verdict.ladder')).toBe(undefined)
   expect((await $.agent.spawn(nested('opus', 'opus'))).deny).toMatch(/model ladder/)
 })
 
@@ -950,8 +950,8 @@ harness('the fable rule runs before the ladder, and a ladder refusal runs no bri
   expect(laddered.deny).toMatch(/model ladder/)
   expect(runs).toEqual([])
   await clock.advance(0)
-  expect(store.get('pace.verdict.fable')).toEqual({ session: 's1', at: 1_000, count: 1 })
-  expect(store.get('pace.verdict.ladder')).toEqual({ session: 's1', at: 1_000, count: 1 })
+  expect(store.get('lane-pace.verdict.fable')).toEqual({ session: 's1', at: 1_000, count: 1 })
+  expect(store.get('lane-pace.verdict.ladder')).toEqual({ session: 's1', at: 1_000, count: 1 })
 })
 
 // a SendMessage wake, raised since 2.1.300 as agent.spawn with resume.agentId
@@ -970,11 +970,11 @@ harness('a resume skips the fable, ladder, and brief checks and writes verdict:r
   expect((await $.agent.spawn(wake('w', { prompt: BRIEF_PROMPT }))).agentId).toBe('new')
   expect(runs).toEqual([])
   await clock.advance(0)
-  expect(store.get('pace.verdict.resume')).toEqual({ session: 's1', at: 1_000, count: 3 })
-  expect(store.get('pace.verdict.wide')).toEqual({ session: 's1', at: 1_000, count: 3 })
-  expect(store.get('pace.verdict.fable')).toBe(undefined)
-  expect(store.get('pace.verdict.ladder')).toBe(undefined)
-  expect(store.get('pace.verdict.brief')).toBe(undefined)
+  expect(store.get('lane-pace.verdict.resume')).toEqual({ session: 's1', at: 1_000, count: 3 })
+  expect(store.get('lane-pace.verdict.wide')).toEqual({ session: 's1', at: 1_000, count: 3 })
+  expect(store.get('lane-pace.verdict.fable')).toBe(undefined)
+  expect(store.get('lane-pace.verdict.ladder')).toBe(undefined)
+  expect(store.get('lane-pace.verdict.brief')).toBe(undefined)
 })
 
 harness('a resume under quiet leaves its own slot out of the live count', async ($, on) => {
@@ -993,8 +993,8 @@ harness('a resume past the cap is refused, the refusal saying its own slot is ou
   expect(spawned.deny).toContain('This wakes w, whose own slot is left out of the count.')
   expect(spawned.deny).not.toContain('lane w')
   await clock.advance(0)
-  expect(store.get('pace.verdict.resume')).toEqual({ session: 's1', at: 1_000, count: 1 })
-  expect(store.get('pace.verdict.cap')).toEqual({ session: 's1', at: 1_000, count: 1 })
+  expect(store.get('lane-pace.verdict.resume')).toEqual({ session: 's1', at: 1_000, count: 1 })
+  expect(store.get('lane-pace.verdict.cap')).toEqual({ session: 's1', at: 1_000, count: 1 })
 })
 
 // every status the engine declares, pinned live or not. a build that adds one reds tsc here
