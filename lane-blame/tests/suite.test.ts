@@ -33,6 +33,10 @@ type World = {
   dirs?: string[]
   // where the session runs, $.session.cwd(); absent, the call is refused
   cwd?: string
+  // what $.settings.read answers per source; absent, the read is refused as no stub answers it
+  settings?: Partial<Record<'project' | 'local', Record<string, unknown>>> | 'refused'
+  // what $.fs.list answers per absolute folder; a folder not listed is refused
+  listing?: Record<string, Array<{ name: string; kind: 'file' | 'dir' }>>
 }
 type Seen = {
   runs: string[][]
@@ -42,19 +46,25 @@ type Seen = {
   bounds: Array<number | undefined>
   files: Record<string, string>
   shown: Array<string | undefined>
+  // the source of each settings read, in order
+  reads: string[]
 }
 
 const lane = (id: string): AgentInfo => ({ id, status: 'running', type: 'general-purpose', description: `lane ${id}` })
 
 // the engine beneath the mod: tools that write, a vitest that answers, the files, and the shell gates
 function engine(on: On, world: World): Seen {
-  const seen: Seen = { runs: [], cwds: [], heads: [], bounds: [], files: { '/proc/loadavg': '3.10 2.00 1.00 2/900 1234\n' }, shown: [] }
+  const seen: Seen = { runs: [], cwds: [], heads: [], bounds: [], files: { '/proc/loadavg': '3.10 2.00 1.00 2/900 1234\n' }, shown: [], reads: [] }
   let clock = world.clockStart ?? 0
   on('session.root', () => ({ value: '/repo' }))
   on('clock.now', () => ({ value: clock }))
   on('agent.list', () => (world.listThrows === true ? { deny: 'agent list unavailable' } : { value: world.live.map(lane) }))
   on('session.cwd', () => (world.cwd === undefined ? { deny: 'no cwd' } : { value: world.cwd }))
   on('fs.exists', (_, e) => ({ value: world.tests.some(t => `/repo/${t}` === e.path) || (world.dirs ?? []).includes(e.path) }))
+  on('fs.list', (_, e) => {
+    const entries = world.listing?.[e.path]
+    return entries === undefined ? { deny: 'ENOENT' } : { value: entries.map(x => ({ ...x, size: 0, mtimeMs: 0, isLink: false })) }
+  })
   on('fs.read', (_, e) => (seen.files[e.path] === undefined ? { deny: 'ENOENT' } : { value: seen.files[e.path] ?? '' }))
   on('fs.write', (_, e) => {
     if (e.text.length > CAP) return { deny: 'a write over 4 MiB rejects' }
@@ -81,6 +91,13 @@ function engine(on: On, world: World): Seen {
       value: { exitCode: world.exitCode, stdout: world.output, stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
     }
   })
+  const planted = world.settings
+  if (planted !== undefined)
+    on('settings.read', (_, e) => {
+      seen.reads.push(e.source ?? 'merged')
+      if (planted === 'refused') return { deny: 'settings unreadable' }
+      return { value: e.source === 'project' || e.source === 'local' ? (planted[e.source] ?? {}) : {} }
+    })
   on('ui.status', (_, e) => {
     seen.shown.push(e.text)
     return { value: undefined }
@@ -109,6 +126,7 @@ const write = (path: string, agentId?: string) => ({
   content: 'x',
   ...(agentId === undefined ? {} : { agentId }),
 })
+const read = (path: string) => ({ tool: 'Read' as const, tool_use_id: 'toolu_test', file_path: path })
 const notebook = (path: string, agentId?: string) => ({
   tool: 'NotebookEdit' as const,
   tool_use_id: 'toolu_test',
@@ -728,4 +746,219 @@ test('gatePhrase set to its own words reads suite on them and other on the defau
   await $.classic.Stop({ stop_hook_active: false })
   expect(lines(seen)[0]).toContain('shell=other:tests are red before ending')
   expect(lines(seen)[1]).toContain('shell=suite')
+})
+
+// the per-repo options read: the project block, then the local one, over the user options
+
+const block = (options: Record<string, unknown>, key = 'lane-blame@claude-lanes') => ({ pluginConfigs: { [key]: { options } } })
+
+test(
+  'a project block field wins over the user value, local over project',
+  { options: { sourceRoot: 'lib', runner: 'node_modules/.bin/mocha' } },
+  async ($, on) => {
+    const world: World = {
+      tests: ['app/a.test.ts', 'lib/a.test.ts'],
+      output: '',
+      exitCode: 0,
+      live: [],
+      settings: {
+        project: {
+          pluginConfigs: {
+            'lane-fence@claude-lanes': { options: { sourceRoot: 'elsewhere' } },
+            'lane-blame@claude-lanes': { options: { sourceRoot: 'app', runner: 'node_modules/.bin/ava', runTimeoutSeconds: 5 } },
+          },
+        },
+        // another marketplace's key still names this mod, and a list takes a JSON array
+        local: block({ runner: ['node_modules/.bin/jest', '--ci'] }, 'lane-blame@elsewhere'),
+      },
+    }
+    const seen = engine(on, world)
+    // a call that writes nothing never waits on the read
+    await $.tool.call(read('/repo/app/a.ts'))
+    expect(seen.reads).toEqual([])
+    await $.tool.call(edit('/repo/app/a.ts'))
+    await $.tool.call(edit('/repo/lib/a.ts'))
+    await $.classic.Stop({ stop_hook_active: false })
+    await $.classic.Stop({ stop_hook_active: false })
+    expect(seen.runs).toEqual([['node_modules/.bin/jest', '--ci', 'app/a.test.ts']])
+    expect(seen.bounds).toEqual([5_000])
+    // once per session, project then local
+    expect(seen.reads).toEqual(['project', 'local'])
+  },
+)
+
+test('a wrong-typed project field is ignored and the user value stands', { options: { sourceRoot: 'lib' } }, async ($, on) => {
+  const world: World = {
+    tests: ['lib/a.test.ts', 'app/a.test.ts'],
+    output: '',
+    exitCode: 0,
+    live: [],
+    settings: { project: block({ sourceRoot: 5, runTimeoutSeconds: '5', runner: ['jest', 3], gatePhrase: true }) },
+  }
+  const seen = engine(on, world)
+  await $.tool.call(edit('/repo/lib/a.ts'))
+  await $.tool.call(edit('/repo/app/a.ts'))
+  await $.classic.Stop({ stop_hook_active: false })
+  expect(seen.runs).toEqual([['./node_modules/.bin/vitest', 'run', 'lib/a.test.ts']])
+  expect(seen.bounds).toEqual([60_000])
+  expect(seen.reads).toEqual(['project', 'local'])
+})
+
+test('no project block changes nothing', { options: { sourceRoot: 'lib' } }, async ($, on) => {
+  const world: World = {
+    tests: ['lib/a.test.ts', 'src/a.test.ts'],
+    output: '',
+    exitCode: 0,
+    live: [],
+    settings: { project: { pluginConfigs: { 'lane-pace@claude-lanes': { options: { quietCap: 4 } } } }, local: {} },
+  }
+  const seen = engine(on, world)
+  await $.tool.call(edit('/repo/lib/a.ts'))
+  await $.tool.call(edit('/repo/src/a.ts'))
+  await $.classic.Stop({ stop_hook_active: false })
+  expect(seen.runs).toEqual([['./node_modules/.bin/vitest', 'run', 'lib/a.test.ts']])
+  expect(seen.reads).toEqual(['project', 'local'])
+})
+
+test('a settings read that rejects leaves the user options standing', { options: { sourceRoot: 'lib' } }, async ($, on) => {
+  const world: World = { tests: ['lib/a.test.ts', 'src/a.test.ts'], output: '', exitCode: 0, live: [], settings: 'refused' }
+  const seen = engine(on, world)
+  await $.tool.call(edit('/repo/lib/a.ts'))
+  await $.tool.call(edit('/repo/src/a.ts'))
+  await $.classic.Stop({ stop_hook_active: false })
+  expect(seen.runs).toEqual([['./node_modules/.bin/vitest', 'run', 'lib/a.test.ts']])
+  expect(seen.reads).toEqual(['project', 'local'])
+})
+
+// several source roots, and a tests folder beside each
+
+const ROOTS = 'lane-pace/hooks lane-fence/hooks'
+const file = (name: string) => ({ name, kind: 'file' as const })
+const dir = (name: string) => ({ name, kind: 'dir' as const })
+
+test('sourceRoot lists two roots and records under both', { options: { sourceRoot: ROOTS } }, async ($, on) => {
+  const world: World = {
+    tests: ['lane-pace/hooks/register.test.ts', 'lane-fence/hooks/register.test.ts', 'src/a.test.ts'],
+    output: red('lane-fence/hooks/register.test.ts'),
+    exitCode: 1,
+    live: [],
+  }
+  const seen = engine(on, world)
+  await $.tool.call(edit('/repo/lane-pace/hooks/register.ts', 'agent_a'))
+  await $.tool.call(edit('/repo/lane-fence/hooks/register.ts', 'agent_b'))
+  await $.tool.call(edit('/repo/src/a.ts'))
+  await $.classic.Stop({ stop_hook_active: false })
+  expect(seen.runs).toEqual([['./node_modules/.bin/vitest', 'run', 'lane-fence/hooks/register.test.ts', 'lane-pace/hooks/register.test.ts']])
+  expect(lines(seen)[0]).toContain(
+    'failing=lane-fence/hooks/register.test.ts\tdeclared=none\twriters=lane-fence/hooks/register.ts:agent_b,lane-pace/hooks/register.ts:agent_a\twould=block',
+  )
+  expect(seen.shown.at(-1)).toBe('suite shadow: 1 red, agent_b')
+})
+
+test(
+  "testFolder set runs the folder's tests on a write under the root and a red names every writer under it",
+  { options: { sourceRoot: ROOTS, testFolder: 'tests', runner: 'claude plugin test' } },
+  async ($, on) => {
+    const world: World = {
+      tests: [],
+      output: red('lane-pace/tests/pace.test.ts'),
+      exitCode: 1,
+      live: [],
+      listing: {
+        '/repo/lane-pace/tests': [file('pace.test.ts'), dir('fixtures'), file('notes.md')],
+        '/repo/lane-pace/tests/fixtures': [file('deep.test.ts')],
+        '/repo/lane-fence/tests': [file('fence.test.ts')],
+      },
+    }
+    const seen = engine(on, world)
+    await $.tool.call(edit('/repo/lane-pace/hooks/register.ts', 'agent_a'))
+    await $.tool.call(edit('/repo/lane-pace/hooks/util.ts', 'agent_b'))
+    await $.tool.call(edit('/repo/lane-fence/hooks/register.ts', 'agent_c'))
+    await $.classic.Stop({ stop_hook_active: false })
+    expect(seen.runs).toEqual([
+      ['claude', 'plugin', 'test', 'lane-fence/tests/fence.test.ts', 'lane-pace/tests/fixtures/deep.test.ts', 'lane-pace/tests/pace.test.ts'],
+    ])
+    // the named red sits under lane-pace, so every writer under lane-pace/hooks owns it and none under lane-fence
+    expect(lines(seen)[0]).toContain('failing=lane-pace/tests/pace.test.ts\tdeclared=none')
+    expect(seen.shown.at(-1)).toBe('suite shadow: 1 red, agent_a, agent_b')
+    // a red whose output names no file, as claude plugin test prints it: every test that ran is red
+    world.output = 'claude plugin test: 1 fail'
+    await $.tool.call(edit('/repo/lane-fence/hooks/register.ts', 'agent_c'))
+    await $.classic.Stop({ stop_hook_active: false })
+    expect(lines(seen)[1]).toContain(
+      'failing=lane-fence/tests/fence.test.ts,lane-pace/tests/fixtures/deep.test.ts,lane-pace/tests/pace.test.ts\tdeclared=none',
+    )
+    expect(lines(seen)[1]).toContain('would=block')
+    expect(seen.shown.at(-1)).toBe('suite shadow: 3 red, agent_c, agent_a, agent_b')
+  },
+)
+
+test('testFolder empty keeps the sibling rule', { options: { sourceRoot: 'lane-pace/hooks', testFolder: '' } }, async ($, on) => {
+  const world: World = {
+    tests: ['lane-pace/hooks/register.test.ts', 'lane-pace/tests/pace.test.ts'],
+    output: '',
+    exitCode: 0,
+    live: [],
+    listing: { '/repo/lane-pace/tests': [file('pace.test.ts')] },
+  }
+  const seen = engine(on, world)
+  await $.tool.call(edit('/repo/lane-pace/hooks/register.ts'))
+  await $.tool.call(edit('/repo/lane-pace/tests/pace.test.ts'))
+  await $.classic.Stop({ stop_hook_active: false })
+  expect(seen.runs).toEqual([['./node_modules/.bin/vitest', 'run', 'lane-pace/hooks/register.test.ts']])
+  expect(lines(seen)[0]).toContain('writers=lane-pace/hooks/register.ts:coordinator\twould=pass')
+})
+
+test(
+  'a write under the tests folder is recorded and runs itself',
+  { options: { sourceRoot: 'lane-pace/hooks', testFolder: 'tests' } },
+  async ($, on) => {
+    const world: World = {
+      tests: ['lane-pace/tests/pace.test.ts', 'lane-pace/tests/other.test.ts'],
+      output: '',
+      exitCode: 0,
+      live: [],
+      listing: { '/repo/lane-pace/tests': [file('pace.test.ts'), file('other.test.ts')] },
+    }
+    const seen = engine(on, world)
+    await $.tool.call(edit('/repo/lane-pace/tests/pace.test.ts', 'agent_a'))
+    await $.classic.Stop({ stop_hook_active: false })
+    expect(seen.runs).toEqual([['./node_modules/.bin/vitest', 'run', 'lane-pace/tests/pace.test.ts']])
+    expect(lines(seen)[0]).toContain('writers=lane-pace/tests/pace.test.ts:agent_a\twould=pass')
+  },
+)
+
+test(
+  "a helper under the tests folder runs every test in it, in the lane's own tree",
+  { options: { sourceRoot: 'lane-pace/hooks', testFolder: 'tests' } },
+  async ($, on) => {
+    const world: World = {
+      tests: [],
+      output: '',
+      exitCode: 0,
+      live: [],
+      dirs: [`/repo/${TREE}`],
+      listing: { [`/repo/${TREE}/lane-pace/tests`]: [file('pace.test.ts'), file('helpers.ts')] },
+    }
+    const seen = engine(on, world)
+    await $.tool.call(edit(`/repo/${TREE}/lane-pace/tests/helpers.ts`, 'agent_x'))
+    await $.classic.SubagentStop(subagentStop('agent_x', `/repo/${TREE}`))
+    expect(seen.runs).toEqual([['./node_modules/.bin/vitest', 'run', 'lane-pace/tests/pace.test.ts']])
+    expect(seen.cwds).toEqual([`/repo/${TREE}`])
+  },
+)
+
+test('a stop whose recorded paths were all committed clean clears the red status', async ($, on) => {
+  const world: World = { tests: ['src/lib/a.test.ts'], output: red('src/lib/a.test.ts'), exitCode: 1, live: [] }
+  const seen = engine(on, world)
+  await $.tool.call(edit('/repo/src/lib/a.ts', 'agent_a'))
+  await $.classic.Stop({ stop_hook_active: false })
+  expect(seen.shown.at(-1)).toBe('suite shadow: 1 red, agent_a')
+  // the fix is committed: HEAD moves and the status reports every recorded path clean
+  world.head = 'bbb222'
+  world.dirty = []
+  await $.classic.Stop({ stop_hook_active: false })
+  expect(lines(seen)[1]).toContain('would=skip')
+  await $.turn.complete(mainTurn())
+  expect(seen.shown.at(-1)).toBe(undefined)
 })

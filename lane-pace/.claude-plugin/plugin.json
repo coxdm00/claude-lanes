@@ -1,6 +1,6 @@
 {
   "name": "lane-pace",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Paces Claude Code subagents: a live-lane cap under a pace word, one judgment seat allowed the top model, a model ladder for nested spawns, and an optional brief-size check before a lane starts",
   "author": {
     "name": "Dave Cox"
@@ -16,7 +16,7 @@
     "paceFile": {
       "type": "string",
       "title": "Pace file",
-      "description": "File holding the pace word, quiet or wide. Relative paths read under the session root. Missing reads wide, so nothing is capped until the file says quiet.",
+      "description": "File holding the pace word, quiet, wide, or a word the paces option names. Relative paths read under the session root. Missing reads wide, so nothing is capped until the file says quiet.",
       "default": ".claude/state/pace"
     },
     "quietCap": {
@@ -24,6 +24,12 @@
       "title": "Quiet cap",
       "description": "Live subagents allowed at once under pace quiet. Zero refuses every spawn under quiet.",
       "default": 2
+    },
+    "paces": {
+      "type": "string",
+      "title": "Pace words",
+      "description": "More pace words, each with its own cap, as a space list of word=cap pairs such as calm=1 busy=4. A word the list does not name gets its smallest cap. wide is always uncapped and cannot be listed, and quiet keeps the quiet cap unless you list it. Empty leaves quiet as the one capped word.",
+      "default": ""
     },
     "seatAgent": {
       "type": "string",

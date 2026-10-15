@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.1.0, 2026-10-15
+
+- A repo can now set its own options. The mod reads the `lane-pace` block under `pluginConfigs` in
+  the project's `.claude/settings.json` and `.claude/settings.local.json`, once per session, and
+  lays it over your user options field by field, the local file over the project file. A field of
+  the wrong type is ignored and your user value stands. A repo with no block sees no change.
+- New `paces` option: name your own pace words, each with its own cap, as `word=cap` pairs such as
+  `calm=1 busy=4`. Write any of them to the pace file. A word the list does not name gets its
+  smallest cap, `wide` stays uncapped, and `quiet` keeps `quietCap` unless you list it, so an empty
+  `paces` changes nothing. The status line and a cap refusal now name the word in force, and the
+  refusal offers each word with a higher cap, then `wide`, as the lift.
+- With `seatModel` set to `opus` or `sonnet`, a seat refusal inside a subagent no longer tells it to
+  respawn on the model it was just refused for. It names only the models below both its parent and
+  the seat.
+- The README's "What this harness sets" block is now the project block of the repo that publishes
+  the mod, and it loads there through the per-repo read. It sets the ladder, the brief-size script,
+  and the `LN` bundle prefix, and leaves the seat rule off.
+- The README says what Claude Code's own subagent cap already does, names every verdict key and
+  status line text, says the seat rule refuses a built-in with no agent file under a parent on the
+  seat model, and installs with one form at project scope. Its threat model names the two project
+  settings files the mod now reads.
+- Checked on Claude Code 2.1.301.
+- The 1.0.0 entry below named the plugin `pace`. It shipped as `lane-pace` in the `claude-lanes`
+  marketplace, with keys `lane-pace.verdict.<kind>`, and that line now says so.
+
 ## 1.0.0, 2026-10-15
 
 First standalone release, lifted out of the Video Oasis harness where it ran as `vo-pace` 0.4.2.
@@ -16,8 +41,8 @@ First standalone release, lifted out of the Video Oasis harness where it ran as 
 - `seatModel` drops `haiku`, which left a refused spawn no lower model to name, and `quietCap: 0`
   is a cap of zero.
 - The brief-size check turns off when `briefScript` is empty.
-- The `vo-` prefix is gone: the plugin is `pace`, and the verdict record keys are
-  `pace.verdict.<kind>` where they were `verdict:<kind>`.
+- The `vo-` prefix is gone: the plugin is `lane-pace` in the `claude-lanes` marketplace, and the
+  verdict record keys are `lane-pace.verdict.<kind>` where they were `verdict:<kind>`.
 - Refusal text names no person and no ruling file.
 - Tests: 94 in all, the inherited cases on the old harness's options, the option pairs, and the
   stranger's defaults.

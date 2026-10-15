@@ -1022,3 +1022,172 @@ test('statDeadlineMs set refuses a stalled stat at its own deadline', { options:
   await clock?.advance(500)
   expect((await call).deny).toContain('stat timed out')
 })
+
+// the per-repo block: the project and local settings files, as $.settings.read answers each
+// source, a source left out answering {} the way a missing file does. reads logs every source asked
+type Sources = { project?: unknown; local?: unknown; fails?: readonly string[]; reads?: string[] }
+const sources = (on: On, s: Sources) =>
+  on('settings.read', (_, e) => {
+    const source = e.source ?? 'merged'
+    s.reads?.push(source)
+    if (s.fails?.includes(source)) return { deny: `${source} settings unreadable` }
+    const value = source === 'project' ? s.project : source === 'local' ? s.local : undefined
+    return { value: (value ?? {}) as Record<string, unknown> }
+  })
+const block = (key: string, options: Record<string, unknown>) => ({ pluginConfigs: { [key]: { options } } })
+const USER = { agentTypes: 'code-reviewer', recordFolders: '.claude/reviews/' }
+
+bare('a project block field wins over the user value, local over project', { options: USER }, async ($, on) => {
+  engine(on)
+  sources(on, {
+    project: block('lane-fence@claude-lanes', { agentTypes: 'security-auditor', recordFolders: 'docs/reviews/' }),
+    local: block('lane-fence', { agentTypes: 'general-purpose' }),
+  })
+  // local names the fenced type, so neither the user's nor the project's is fenced
+  expect(await passes($, 'echo x > src/x.ts', 'lane')).toContain('general-purpose is a read-only reviewer')
+  expect(await passes($, 'echo x > src/x.ts', 'rev')).toBeUndefined()
+  expect(await passes($, 'echo x > src/x.ts', 'sec')).toBeUndefined()
+  // local sets no record folder, so the project's stands over the user's
+  expect(await passes($, 'echo x > docs/reviews/r.md', 'lane')).toBeUndefined()
+  expect(await passes($, 'echo x > .claude/reviews/r.md', 'lane')).toContain('Write only under docs/reviews/,')
+})
+
+bare('a wrong-typed project field is ignored and the user value stands', { options: USER }, async ($, on) => {
+  engine(on)
+  sources(on, {
+    project: block('lane-fence@claude-lanes', {
+      agentTypes: 7,
+      recordFolders: ['docs/reviews/', 'out/PR-*/'],
+      systemTmp: false,
+      memoryRoot: ['notes'],
+      statDeadlineMs: '500',
+    }),
+  })
+  expect(await passes($, 'echo x > src/x.ts', 'rev')).toContain('code-reviewer is a read-only reviewer')
+  expect(await passes($, 'echo x > src/x.ts', 'lane')).toBeUndefined()
+  // a list option takes a JSON array, the field beside a wrong one still wins
+  expect(await passes($, 'echo x > out/PR-3/r.md')).toBeUndefined()
+  expect(await passes($, 'echo x > /tmp/a.md')).toBeUndefined()
+  expect(await passes($, 'echo x > .claude/agent-memory/code-reviewer/n.md')).toBeUndefined()
+  expect(await passes($, 'echo x > notes/code-reviewer/n.md')).toContain('outside its record paths')
+})
+
+bare('a wrong-typed project number is ignored and the user deadline stands', { options: { ...USER, statDeadlineMs: 500 } }, async ($, on) => {
+  const clock = engine(on, [], [], { noStat: true })
+  on('fs.stat', () => new Promise<never>(() => undefined))
+  sources(on, { project: block('lane-fence@claude-lanes', { statDeadlineMs: '3000' }) })
+  let settled = false
+  const call = $.tool.call(bash('echo x > tmp/a.md', 'rev')).then(done => {
+    settled = true
+    return done
+  })
+  // the user's 500 holds, a string 3000 taken would read the two-second default
+  await clock?.advance(500)
+  expect(settled).toBe(true)
+  expect((await call).deny).toContain('stat timed out')
+})
+
+test('no project block changes nothing', async ($, on) => {
+  engine(on)
+  sources(on, {
+    project: { pluginConfigs: { 'lane-blame@claude-lanes': { options: { agentTypes: 'general-purpose' } }, 'lane-fencer': { options: { agentTypes: '' } } } },
+    local: { permissions: { allow: [] } },
+  })
+  expect(await passes($, 'echo x > src/x.ts', 'voice')).toContain('voice-reviewer is a read-only reviewer')
+  expect(await passes($, 'echo x > src/x.ts', 'lane')).toBeUndefined()
+  expect(await passes($, 'echo x > .claude/features/CC-1/r.md', 'voice')).toBeUndefined()
+})
+
+test('a settings read that rejects leaves the user options standing', async ($, on) => {
+  engine(on)
+  sources(on, { local: block('lane-fence', { agentTypes: '' }), fails: ['project', 'local'] })
+  expect(await passes($, 'echo x > src/x.ts', 'voice')).toContain('voice-reviewer is a read-only reviewer')
+  expect(await passes($, 'echo x > .claude/features/CC-1/r.md', 'voice')).toBeUndefined()
+})
+
+test('the project block is read once per session, never on each Bash call', async ($, on) => {
+  const reads: string[] = []
+  engine(on)
+  sources(on, { project: block('lane-fence@claude-lanes', { recordFolders: 'docs/reviews/' }), reads })
+  // the main loop reads no config, so it pays no read
+  await $.tool.call(bash('echo x > src/x.ts'))
+  expect(reads).toEqual([])
+  await Promise.all([passes($, 'echo x > docs/reviews/a.md'), passes($, 'echo x > docs/reviews/b.md', 'perf')])
+  expect(await passes($, 'echo x > .claude/features/CC-1/r.md', 'sec')).toContain('Write only under docs/reviews/,')
+  expect(reads).toEqual(['project', 'local'])
+})
+
+// the reconcile's code findings, each red against 1.0.0
+test('an unplaceable target is refused, a home path, a variable, or a substitution', async ($, on) => {
+  const ran: string[] = []
+  engine(on, ran)
+  for (const [command, named] of [
+    ['echo x > ~/x.ts', '~/x.ts'],
+    ['echo x | tee $OUT', '$OUT'],
+    ['echo x > "$(pwd)/src/x.ts"', '$(pwd)/src/x.ts'],
+    ['touch `pwd`/src/x.ts', '`pwd`/src/x.ts'],
+  ]) {
+    const done = await $.tool.call(bash(command ?? '', 'rev'))
+    expect(done.deny, command).toContain(`this fence cannot place ${named ?? ''}, since`)
+  }
+  expect(ran).toEqual([])
+})
+
+test('git branch and tag that move a ref are refused, a bare listing passes', async ($, on) => {
+  const ran: string[] = []
+  engine(on, ran)
+  for (const [command, named] of [
+    ['git branch -f main HEAD~1', "'git branch'"],
+    ['git branch -D old', "'git branch'"],
+    ['git branch new-work', "'git branch'"],
+    ['git branch -v new-work', "'git branch'"],
+    ['git tag v9', "'git tag'"],
+    ['git tag -a v9 -m release', "'git tag'"],
+    ['git tag -d v1', "'git tag'"],
+    ['git update-ref refs/heads/main HEAD~1', "'git update-ref'"],
+  ]) {
+    const done = await $.tool.call(bash(command ?? '', 'rev'))
+    expect(done.deny, command).toContain(`may not run ${named ?? ''}`)
+  }
+  expect(ran).toEqual([])
+  const ok = [
+    'git branch',
+    'git branch -a -vv',
+    "git branch --list 'ln-*'",
+    'git branch --contains HEAD',
+    'git branch --show-current',
+    'git tag',
+    "git tag -l 'v1*'",
+    'git tag -n v1',
+  ]
+  for (const command of ok) expect((await $.tool.call(bash(command, 'rev'))).deny, command).toBeUndefined()
+  expect(ran).toEqual(ok)
+})
+
+test('a plain rsync is judged as a write to its destination', async ($, on) => {
+  const ran: string[] = []
+  engine(on, ran)
+  expect((await $.tool.call(bash('rsync /tmp/x.ts src/x.ts', 'rev'))).deny).toContain('/repo/src/x.ts is outside its record paths')
+  expect((await $.tool.call(bash('rsync -r /tmp/d/ src/', 'rev'))).deny).toContain('/repo/src is outside its record paths')
+  expect(ran).toEqual([])
+  const ok = ['rsync -r /repo/src/ tmp/s/', 'rsync --list-only /repo/src/']
+  for (const command of ok) expect((await $.tool.call(bash(command, 'rev'))).deny, command).toBeUndefined()
+  expect(ran).toEqual(ok)
+})
+
+test("deno eval is deno's inline form, and a Deno write call is a write", async ($, on) => {
+  const ran: string[] = []
+  engine(on, ran)
+  for (const command of [
+    `deno eval "Deno.writeTextFileSync('src/x.ts', 'x')"`,
+    `deno eval --ext ts "await Deno.writeFile('src/x.ts', new Uint8Array())"`,
+    `deno eval "Deno.removeSync('src/x.ts')"`,
+  ]) {
+    expect((await $.tool.call(bash(command, 'rev'))).deny, command).toContain('inline deno script')
+  }
+  expect(ran).toEqual([])
+  // a reading eval passes, and a python list's remove is no file write
+  const ok = [`deno eval "console.log(Deno.readTextFileSync('src/x.ts'))"`, `python3 -c "a = [1]; a.remove(1)"`]
+  for (const command of ok) expect((await $.tool.call(bash(command, 'rev'))).deny, command).toBeUndefined()
+  expect(ran).toEqual(ok)
+})

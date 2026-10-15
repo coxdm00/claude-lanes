@@ -1077,6 +1077,85 @@ test('option quietCap: zero is a cap of zero, every spawn refused under quiet', 
   expect((await $.agent.spawn(spawnArgs('review the diff'))).deny).toMatch(/0 lanes are live, the cap is 0/)
 })
 
+// the paces map: each word its own cap, wide never capped, quiet at quietCap unless a pair names it
+const TIERS = { paces: 'calm=1 quiet=2 busy=4' }
+
+option(
+  'paces',
+  TIERS,
+  async ($, on) => {
+    // no map, so busy is a word nothing names and reads quiet's cap
+    engine(on, 'busy', [lane('a', 'running'), lane('b', 'running')])
+    expect((await $.agent.spawn(spawnArgs('review the diff'))).deny).toMatch(/pace is quiet and 2 lanes are live, the cap is 2/)
+  },
+  async ($, on) => {
+    engine(on, 'busy', [lane('a', 'running'), lane('b', 'running')])
+    expect((await $.agent.spawn(spawnArgs('review the diff'))).agentId).toBe('new')
+  },
+)
+
+test('option paces: a two-tier map caps each word at its own number', { options: TIERS }, async ($, on) => {
+  const agents = [lane('a', 'running')]
+  const files: Record<string, string> = {}
+  engine(on, undefined, agents, [], files)
+  const at = async (word: string) => {
+    files['/repo/.claude/state/pace'] = `${word}\n`
+    return $.agent.spawn(spawnArgs('review the diff'))
+  }
+  expect((await at('calm')).deny).toMatch(/the cap is 1/)
+  expect((await at('quiet')).agentId).toBe('new')
+  agents.push(lane('b', 'running'), lane('c', 'running'))
+  expect((await at('quiet')).deny).toMatch(/the cap is 2/)
+  expect((await at('busy')).agentId).toBe('new')
+  agents.push(lane('d', 'running'))
+  expect((await at('busy')).deny).toMatch(/the cap is 4/)
+})
+
+test('option paces: a word the map does not name reads its smallest cap', { options: { paces: 'quiet=3 calm=1 busy=5' } }, async ($, on) => {
+  const status: Array<string | undefined> = []
+  engine(on, 'Wide', [lane('a', 'running')], status)
+  const deny = (await $.agent.spawn(spawnArgs('review the diff'))).deny ?? ''
+  expect(deny).toMatch(/^pace is calm and 1 lanes are live, the cap is 1/)
+  expect(status.at(-1)).toBe('pace calm, 1 of 1 lanes, spawn refused')
+})
+
+test(
+  'option paces: a wide pair is dropped and wide stays uncapped',
+  { options: { paces: 'wide=3 quiet=1 junk calm=x =2 big=2.5' } },
+  async ($, on) => {
+    const agents = [lane('a', 'running'), lane('b', 'running'), lane('c', 'running')]
+    const files: Record<string, string> = { '/repo/.claude/state/pace': 'wide' }
+    engine(on, undefined, agents, [], files)
+    expect((await $.agent.spawn(spawnArgs('review the diff'))).agentId).toBe('new')
+    // every pair but quiet=1 is malformed, so big reads the one cap left
+    files['/repo/.claude/state/pace'] = 'big'
+    expect((await $.agent.spawn(spawnArgs('review the diff'))).deny).toMatch(/^pace is quiet and 3 lanes are live, the cap is 1/)
+  },
+)
+
+test('option paces: empty keeps quietCap as the cap of quiet', { options: { paces: '', quietCap: 3 } }, async ($, on) => {
+  const status: Array<string | undefined> = []
+  engine(on, 'quiet', [lane('a', 'running'), lane('b', 'running')], status)
+  expect((await $.agent.spawn(spawnArgs('review the diff'))).agentId).toBe('new')
+  expect(status.at(-1)).toBe('pace quiet, 3 of 3 lanes')
+})
+
+test('option paces: a map that skips quiet leaves quiet at quietCap', { options: { paces: 'busy=6', quietCap: 1 } }, async ($, on) => {
+  engine(on, 'quiet', [lane('a', 'running')])
+  expect((await $.agent.spawn(spawnArgs('review the diff'))).deny).toMatch(/pace is quiet and 1 lanes are live, the cap is 1/)
+})
+
+test('option paces: the status and the refusal name the word, the lift a higher word or wide', { options: TIERS }, async ($, on) => {
+  const status: Array<string | undefined> = []
+  engine(on, 'calm', [lane('a', 'running')], status)
+  const deny = (await $.agent.spawn(spawnArgs('review the diff'))).deny ?? ''
+  expect(deny).toMatch(/^pace is calm and 1 lanes are live, the cap is 1:/)
+  expect(deny).toMatch(/run the step inline; write quiet, busy, or wide to \.claude\/state\/pace to lift the cap\.$/)
+  expect(status.at(-1)).toBe('pace calm, 1 of 1 lanes, spawn refused')
+  await $.turn.complete(mainTurn())
+  expect(status.at(-1)).toBe('pace calm, 1 of 1 lanes')
+})
+
 // a stranger's install: the shipped defaults, nothing on disk but what each case names
 test('defaults: a main-loop Explore spawn in a fable session starts, the seat rule off', async ($, on) => {
   engine(on, undefined, [])
@@ -1286,3 +1365,109 @@ option(
   },
   { briefScript: HARNESS.briefScript },
 )
+
+// the project and local settings files as the engine loads them, each answered by its source, and
+// every source asked for in order, so a case can count the reads
+const settings = (on: On, project: Record<string, unknown>, local: Record<string, unknown> = {}) => {
+  const reads: string[] = []
+  on('settings.read', (_, e) => {
+    reads.push(String(e.source))
+    return { value: e.source === 'project' ? project : e.source === 'local' ? local : {} }
+  })
+  return reads
+}
+const blockOf = (entries: Record<string, Record<string, unknown>>) => ({
+  pluginConfigs: Object.fromEntries(Object.entries(entries).map(([key, options]) => [key, { options }])),
+})
+
+test(
+  'a project block field wins over the user value, local over project',
+  { options: { ...HARNESS, quietCap: 1, seatAgent: 'architect' } },
+  async ($, on) => {
+    const status: Array<string | undefined> = []
+    const agents = [lane('a', 'running')]
+    engine(on, 'quiet', agents, status)
+    const reads = settings(
+      on,
+      // a lookalike name is no match, and the first lane-pace entry in file order is the one taken
+      blockOf({
+        'lane-pacer@claude-lanes': { quietCap: 9 },
+        'lane-pace@claude-lanes': { quietCap: 3, seatAgent: 'design-critic' },
+        'lane-pace@elsewhere': { seatAgent: 'other' },
+      }),
+      blockOf({ 'lane-pace@inline': { quietCap: 2 } }),
+    )
+    // a turn end that comes first still meets the merged block
+    await $.turn.complete(mainTurn())
+    expect(status.at(-1)).toBe('pace quiet, 1 of 2 lanes')
+    expect((await $.agent.spawn(spawnArgs('review the diff'))).agentId).toBe('new')
+    agents.push(lane('b', 'running'))
+    expect((await $.agent.spawn(spawnArgs('review the diff'))).deny).toMatch(/the cap is 2/)
+    expect((await $.agent.spawn(spawnArgs('judge', 'fable', 'architect'))).deny).toMatch(/design-critic is the only one/)
+    // read once for the session, the project file then the local one
+    expect(reads).toEqual(['project', 'local'])
+  },
+)
+
+test(
+  'a wrong-typed project field is ignored and the user value stands',
+  { options: { ...HARNESS, quietCap: 3, seatModel: 'opus' } },
+  async ($, on) => {
+    const status: Array<string | undefined> = []
+    engine(on, 'quiet', [lane('a', 'running'), lane('b', 'running')], status, AGENT_FILES)
+    settings(
+      on,
+      blockOf({
+        'lane-pace@claude-lanes': { quietCap: '1', ladder: 'false', seatModel: 'haiku', seatAgent: 'architect' },
+      }),
+    )
+    // the string cap and the string ladder are dropped, the right-typed seat agent beside them wins.
+    // sonnet, since a bare built-in under this opus parent would meet the opus seat first
+    expect((await $.agent.spawn(spawnArgs('review the diff', 'sonnet'))).agentId).toBe('new')
+    expect(status.at(-1)).toBe('pace quiet, 3 of 3 lanes')
+    expect((await $.agent.spawn(nested('sonnet', 'sonnet'))).deny).toMatch(/^The model ladder/)
+    // a seat model outside the manifest's options counts as unset, so the user's opus stands
+    expect((await $.agent.spawn(spawnArgs('review the diff', 'opus'))).deny).toMatch(
+      /^An Opus pin is for a judgment seat, and architect is the only one\./,
+    )
+  },
+)
+
+test('no project block changes nothing', { options: { ...HARNESS, quietCap: 4 } }, async ($, on) => {
+  const status: Array<string | undefined> = []
+  engine(on, 'quiet', [lane('a', 'running'), lane('b', 'running'), lane('c', 'running')], status)
+  // another mod's block, a first lane-pace entry that is no object, and a block with no options
+  settings(on, { pluginConfigs: { 'lane-fence@claude-lanes': { options: { quietCap: 1 } }, 'lane-pace@x': 'quiet' } }, {
+    pluginConfigs: { 'lane-pace@claude-lanes': {} },
+  })
+  expect((await $.agent.spawn(spawnArgs('review the diff'))).agentId).toBe('new')
+  expect(status.at(-1)).toBe('pace quiet, 4 of 4 lanes')
+  expect((await $.agent.spawn(spawnArgs('review the diff', 'fable'))).deny).toMatch(/design-critic is the only one/)
+})
+
+test('a settings read that rejects leaves the user options standing', { options: { ...HARNESS, quietCap: 4 } }, async ($, on) => {
+  const status: Array<string | undefined> = []
+  engine(on, 'quiet', [lane('a', 'running'), lane('b', 'running'), lane('c', 'running')], status)
+  on('settings.read', () => ({ deny: 'settings unavailable' }))
+  expect((await $.agent.spawn(spawnArgs('review the diff'))).agentId).toBe('new')
+  expect(status.at(-1)).toBe('pace quiet, 4 of 4 lanes')
+  await $.turn.complete(mainTurn())
+  expect(status.at(-1)).toBe('pace quiet, 3 of 4 lanes')
+})
+
+// a nested seat refusal offers the passes below both the parent and the seat, never the model refused
+for (const [seat, parent, told] of [
+  ['opus', 'fable', 'model: "sonnet" or "haiku"'],
+  ['sonnet', 'opus', 'model: "haiku"'],
+] as const)
+  test(
+    `a nested refusal on the ${seat} seat never offers ${seat} back, the parent on ${parent}`,
+    { options: { ...HARNESS, seatModel: seat } },
+    async ($, on) => {
+      engine(on, 'wide', [], [], AGENT_FILES)
+      expect((await $.agent.spawn(nested(parent, seat))).deny).toBe(
+        `${seat === 'opus' ? 'An' : 'A'} ${seat === 'opus' ? 'Opus' : 'Sonnet'} pin is for a judgment seat, and ` +
+          `design-critic is the only one. Respawn this general-purpose lane with ${told}.`,
+      )
+    },
+  )
