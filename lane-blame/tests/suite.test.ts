@@ -947,3 +947,18 @@ test(
     expect(seen.cwds).toEqual([`/repo/${TREE}`])
   },
 )
+
+test('a stop whose recorded paths were all committed clean clears the red status', async ($, on) => {
+  const world: World = { tests: ['src/lib/a.test.ts'], output: red('src/lib/a.test.ts'), exitCode: 1, live: [] }
+  const seen = engine(on, world)
+  await $.tool.call(edit('/repo/src/lib/a.ts', 'agent_a'))
+  await $.classic.Stop({ stop_hook_active: false })
+  expect(seen.shown.at(-1)).toBe('suite shadow: 1 red, agent_a')
+  // the fix is committed: HEAD moves and the status reports every recorded path clean
+  world.head = 'bbb222'
+  world.dirty = []
+  await $.classic.Stop({ stop_hook_active: false })
+  expect(lines(seen)[1]).toContain('would=skip')
+  await $.turn.complete(mainTurn())
+  expect(seen.shown.at(-1)).toBe(undefined)
+})

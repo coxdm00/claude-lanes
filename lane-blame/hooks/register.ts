@@ -437,7 +437,8 @@ const sentinelOf = async (io: Io, tree: string) => {
 // One stop's shadow judgment over the stopping tree: scoped run, sentinel, map, log, status. A
 // lane in a worktree is judged in its worktree, the main loop and a shared-tree lane in the main
 // tree. Never answers for the gate, and every stop writes one line, an idle one would=skip, so a
-// loaded mod is told from an unloaded one. Undefined leaves the status entry as it was.
+// loaded mod is told from an unloaded one. Undefined, an idle stop, leaves the status entry as it
+// was; a stop whose every path a commit pruned judged the record clean, so it clears the entry.
 async function shadow(io: Io, who: string, all: Writes, shell: Shell, tree: string): Promise<Last | undefined> {
   const cfg = io.cfg
   await dropGone(io, all, tree)
@@ -448,11 +449,11 @@ async function shadow(io: Io, who: string, all: Writes, shell: Shell, tree: stri
   // a worktree stop names its tree at the end of run=, so the column count stays pinned
   const inTree = tree === '' ? '' : ` in ${tree}`
   const load = await loadOf(io)
-  const skip = async () => {
+  const skip = async (cleared?: Last) => {
     const run = `nothing armed, no recorded write under ${under} in ${where}`
     const at = await io.now()
     await appendLine(io, logLine({ at, who, failing: [], declared: [], writes: {}, would: 'skip', shell, load, run }))
-    return undefined
+    return cleared
   }
   if (paths.length === 0) return skip()
   // a commit moves HEAD and a new write moves seq, either one judges again
@@ -462,7 +463,7 @@ async function shadow(io: Io, who: string, all: Writes, shell: Shell, tree: stri
   )
   const held = await io.memo(tree)
   if (held?.head !== undefined && held.head !== head) paths = await prune(io, tree, paths)
-  if (paths.length === 0) return skip()
+  if (paths.length === 0) return skip({ reds: 0, owners: [] })
   const writes: Writes = Object.fromEntries(paths.map(p => [p, mine[p] ?? []]))
   const declared = await sentinelOf(io, tree)
   const memoKey = hashOf(`${paths.map(p => joinTree(tree, p)).join('\n')}\n${await io.seq()}\n${head}`)
