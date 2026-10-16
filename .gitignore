@@ -13,3 +13,7 @@ tools/.vale/
 
 # anything review-shaped at the root never enters the public history
 /REVIEW-*.md
+
+# the harness instructions and its bootstrap prompt stay private
+/CLAUDE.md
+/docs/bootstrap-prompt.md
