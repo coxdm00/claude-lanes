@@ -1,12 +1,9 @@
 node_modules/
 */.claude-plugin/types/
 
-# personal harness state, never shared
-.claude/settings.local.json
-.claude/handoff/
-.claude/state/
-.claude/worktrees/
-.claude/scratchpad/
+# the private harness and its CI, never in the public history
+.claude/
+.github/
 # the engine's generated mod type folders, laid beside each mod by claude plugin validate
 .claude-plugin/types/
 
@@ -14,6 +11,5 @@ node_modules/
 tools/bin/
 tools/.vale/
 
-# cold reviews, and anything review-shaped at the root, never enter the public history
-.claude/reviews/
+# anything review-shaped at the root never enters the public history
 /REVIEW-*.md
